@@ -1,0 +1,31 @@
+name: Daily housing notice sync
+
+on:
+  schedule:
+    # GitHub Actions cron은 UTC 기준: 01:00 UTC = 10:00 KST
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: daily-housing-notice-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Collect official notices and recalculate matches
+        run: npm run sync:listings
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          LH_ANNOUNCEMENT_API_URL: ${{ secrets.LH_ANNOUNCEMENT_API_URL }}
+          LH_SUPPLY_API_URL: ${{ secrets.LH_SUPPLY_API_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

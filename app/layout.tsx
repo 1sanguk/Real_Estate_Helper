@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { AuthProvider } from '@/features/auth/auth-context';
 
 export const metadata: Metadata = {
   title: '내집레이더 | LH·SH 공공주택 맞춤 탐색',
@@ -13,7 +14,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body><AuthProvider>{children}</AuthProvider></body>
     </html>
   );
 }
