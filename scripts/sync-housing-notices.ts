@@ -6,87 +6,12 @@ import {
   type LhApiRow,
   type OfficialListing,
 } from '../domain/dashboard.ts';
-
-const ANNOUNCEMENT_URL = process.env.LH_ANNOUNCEMENT_API_URL ??
-  'https://apis.data.go.kr/B552555/lhLeaseNoticeInfo1/lhLeaseNoticeInfo1';
-const SUPPLY_URL = process.env.LH_SUPPLY_API_URL ??
-  'https://apis.data.go.kr/B552555/lhLeaseNoticeSplInfo1/lhLeaseNoticeSplInfo1';
-const PAGE_SIZE = 100;
+import { getListingId, LhApiClient } from '../infrastructure/lh/lh-api.ts';
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} 환경 변수가 필요합니다.`);
   return value;
-}
-
-function findRows(value: unknown): LhApiRow[] {
-  if (Array.isArray(value)) {
-    if (value.every((item) => item && typeof item === 'object' && !Array.isArray(item))) {
-      return value as LhApiRow[];
-    }
-    for (const item of value) {
-      const rows = findRows(item);
-      if (rows.length) return rows;
-    }
-  }
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    for (const key of ['dsList', 'item', 'items', 'data', 'response', 'body']) {
-      if (key in record) {
-        const rows = findRows(record[key]);
-        if (rows.length) return rows;
-      }
-    }
-    for (const nested of Object.values(record)) {
-      const rows = findRows(nested);
-      if (rows.length) return rows;
-    }
-  }
-  return [];
-}
-
-async function requestRows(baseUrl: string, params: Record<string, string>): Promise<LhApiRow[]> {
-  const url = new URL(baseUrl);
-  url.searchParams.set('serviceKey', required('DATA_GO_KR_SERVICE_KEY'));
-  url.searchParams.set('_type', 'json');
-  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`LH API 호출 실패 (${response.status} ${response.statusText})`);
-  const body = await response.text();
-  let parsed: unknown;
-  try { parsed = JSON.parse(body); } catch { throw new Error(`LH API가 JSON이 아닌 응답을 반환했습니다: ${body.slice(0, 160)}`); }
-  return findRows(parsed);
-}
-
-function listingId(row: LhApiRow): string {
-  const value = row.PAN_ID ?? row.panId ?? row.pan_id;
-  return typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
-}
-
-async function fetchAnnouncements(): Promise<LhApiRow[]> {
-  const all: LhApiRow[] = [];
-  for (let page = 1; page <= 100; page++) {
-    const rows = await requestRows(ANNOUNCEMENT_URL, {
-      pageNo: String(page), numOfRows: String(PAGE_SIZE), PAGE: String(page), PG_SZ: String(PAGE_SIZE),
-    });
-    all.push(...rows);
-    if (rows.length < PAGE_SIZE) break;
-  }
-  return [...new Map(all.filter(listingId).map((row) => [listingId(row), row])).values()];
-}
-
-async function fetchSupplies(rows: LhApiRow[]): Promise<LhApiRow[]> {
-  const output: LhApiRow[] = [];
-  for (let index = 0; index < rows.length; index += 8) {
-    const batch = rows.slice(index, index + 8);
-    const results = await Promise.all(batch.map(async (row) => {
-      const panId = listingId(row);
-      try { return await requestRows(SUPPLY_URL, { PAN_ID: panId, panId, pageNo: '1', numOfRows: '100' }); }
-      catch (error) { console.warn(`공급정보 생략 (${panId}):`, error instanceof Error ? error.message : error); return []; }
-    }));
-    output.push(...results.flat());
-  }
-  return output;
 }
 
 function toDatabaseRow(listing: OfficialListing, rawData: LhApiRow) {
@@ -107,11 +32,16 @@ async function main() {
   const { data: run, error: runError } = await supabase.from('listing_sync_runs').insert({ status: 'running' }).select('id').single();
   if (runError) throw runError;
   try {
-    const announcementRows = await fetchAnnouncements();
-    const supplyRows = await fetchSupplies(announcementRows);
+    const lhClient = new LhApiClient({
+      serviceKey: required('DATA_GO_KR_SERVICE_KEY'),
+      announcementUrl: process.env.LH_ANNOUNCEMENT_API_URL,
+      supplyUrl: process.env.LH_SUPPLY_API_URL,
+    });
+    const announcementRows = await lhClient.fetchAnnouncements();
+    const supplyRows = await lhClient.fetchSupplies(announcementRows);
     const listings = mapLhApiResponse(announcementRows, supplyRows);
     if (!listings.length) throw new Error('공식 API에서 유효한 공고를 찾지 못해 기존 데이터를 보존했습니다.');
-    const rawById = new Map(announcementRows.map((row) => [listingId(row), row]));
+    const rawById = new Map(announcementRows.map((row) => [getListingId(row), row]));
     const { error: listingError } = await supabase.from('official_listings')
       .upsert(listings.map((item) => toDatabaseRow(item, rawById.get(item.id) ?? {})), { onConflict: 'source_listing_id' });
     if (listingError) throw listingError;
