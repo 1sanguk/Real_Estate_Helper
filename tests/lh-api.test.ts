@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { extractLhRows, LhApiClient } from '../infrastructure/lh/lh-api.ts';
+import { extractLhRows, LhApiClient, parseLhNoticeDetail } from '../infrastructure/lh/lh-api.ts';
 
 void test('공공데이터포털의 배열 래퍼 안에서 실제 dsList만 추출한다', () => {
   const response = [{
@@ -18,6 +18,22 @@ void test('공급정보의 dsList01을 검색조건 dsSch보다 우선 추출한
     { dsList01Nm: [{ NAME: '공급대상주택' }], dsList01: [{ HO_NO: '101', DDO_AR: '36.2', ADR: '서울시' }] },
   ];
   assert.deepEqual(extractLhRows(response), [{ HO_NO: '101', DDO_AR: '36.2', ADR: '서울시' }]);
+});
+
+void test('상세정보 응답에서 일정·첨부파일·단지를 분리한다', () => {
+  const detail = parseLhNoticeDetail('P-1', [
+    { dsSch: [{ PAN_ID: 'P-1' }] },
+    {
+      dsSplScdl: [{ RQS_SCD: '2026-09-10' }],
+      dsAhflInfo: [{ CMN_AHFL_NM: '공고문.pdf', AHFL_URL: 'https://example.test/a.pdf' }],
+      dsSbd: [{ SBD_LGO_NM: '테스트단지' }],
+      dsCtrtPlc: [{ CTRT_PLC_ADR: '서울시' }],
+    },
+  ]);
+  assert.equal(detail.panId, 'P-1');
+  assert.equal(detail.attachments[0].CMN_AHFL_NM, '공고문.pdf');
+  assert.equal(detail.complexes[0].SBD_LGO_NM, '테스트단지');
+  assert.equal(detail.schedules.length, 1);
 });
 
 void test('LH API 클라이언트가 공고 중복을 제거하고 공급정보를 조회한다', async () => {

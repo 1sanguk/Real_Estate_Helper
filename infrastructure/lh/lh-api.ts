@@ -4,6 +4,8 @@ export const DEFAULT_LH_ANNOUNCEMENT_URL =
   'https://apis.data.go.kr/B552555/lhLeaseNoticeInfo1/lhLeaseNoticeInfo1';
 export const DEFAULT_LH_SUPPLY_URL =
   'https://apis.data.go.kr/B552555/lhLeaseNoticeSplInfo1/getLeaseNoticeSplInfo1';
+export const DEFAULT_LH_DETAIL_URL =
+  'https://apis.data.go.kr/B552555/lhLeaseNoticeDtlInfo1/getLeaseNoticeDtlInfo1';
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 100;
@@ -92,6 +94,7 @@ export type LhApiClientOptions = {
   serviceKey: string;
   announcementUrl?: string;
   supplyUrl?: string;
+  detailUrl?: string;
   fetchImplementation?: typeof fetch;
 };
 
@@ -99,6 +102,7 @@ export class LhApiClient {
   readonly #serviceKey: string;
   readonly #announcementUrl: string;
   readonly #supplyUrl: string;
+  readonly #detailUrl: string;
   readonly #fetch: typeof fetch;
 
   constructor(options: LhApiClientOptions) {
@@ -110,6 +114,10 @@ export class LhApiClient {
     this.#supplyUrl = resolveOperationUrl(
       options.supplyUrl ?? DEFAULT_LH_SUPPLY_URL,
       'getLeaseNoticeSplInfo1',
+    );
+    this.#detailUrl = resolveOperationUrl(
+      options.detailUrl ?? DEFAULT_LH_DETAIL_URL,
+      'getLeaseNoticeDtlInfo1',
     );
     this.#fetch = options.fetchImplementation ?? fetch;
   }
@@ -138,6 +146,22 @@ export class LhApiClient {
     return output;
   }
 
+  async fetchDetails(announcements: LhApiRow[]): Promise<LhNoticeDetail[]> {
+    const output: LhNoticeDetail[] = [];
+    for (let index = 0; index < announcements.length; index++) {
+      if (index > 0) await wait(SUPPLY_REQUEST_INTERVAL_MS);
+      const announcement = announcements[index];
+      const panId = getListingId(announcement);
+      try {
+        const raw = await this.#requestJson(this.#detailUrl, this.#serviceKey, detailParameters(announcement));
+        output.push(parseLhNoticeDetail(panId, raw));
+      } catch (error) {
+        console.warn(`상세정보 생략 (${panId}):`, error instanceof Error ? error.message : error);
+      }
+    }
+    return output;
+  }
+
   async #fetchSupply(announcement: LhApiRow): Promise<LhApiRow[]> {
     const panId = getListingId(announcement);
     try {
@@ -156,6 +180,10 @@ export class LhApiClient {
   }
 
   async #requestRows(baseUrl: string, serviceKey: string, params: Record<string, string>): Promise<LhApiRow[]> {
+    return extractLhRows(await this.#requestJson(baseUrl, serviceKey, params));
+  }
+
+  async #requestJson(baseUrl: string, serviceKey: string, params: Record<string, string>): Promise<unknown> {
     const url = new URL(baseUrl);
     url.searchParams.set('serviceKey', serviceKey);
     url.searchParams.set('_type', 'json');
@@ -172,11 +200,48 @@ export class LhApiClient {
         throw new Error(`LH API 호출 실패 (${response.status} ${response.statusText})${safeMessage ? `: ${safeMessage}` : ''}`);
       }
       try {
-        return extractLhRows(JSON.parse(body));
+        return JSON.parse(body);
       } catch {
         throw new Error(`LH API가 JSON이 아닌 응답을 반환했습니다: ${body.slice(0, 160)}`);
       }
     }
     return [];
   }
+}
+
+function detailParameters(announcement: LhApiRow): Record<string, string> {
+  return {
+    PAN_ID: getListingId(announcement),
+    SPL_INF_TP_CD: parameterValue(announcement, 'SPL_INF_TP_CD', 'splInfTpCd'),
+    CCR_CNNT_SYS_DS_CD: parameterValue(announcement, 'CCR_CNNT_SYS_DS_CD', 'ccrCnntSysDsCd'),
+    UPP_AIS_TP_CD: parameterValue(announcement, 'UPP_AIS_TP_CD', 'uppAisTpCd'),
+    AIS_TP_CD: parameterValue(announcement, 'AIS_TP_CD', 'aisTpCd'),
+  };
+}
+
+export type LhNoticeDetail = {
+  panId: string;
+  schedules: LhApiRow[];
+  attachments: LhApiRow[];
+  complexes: LhApiRow[];
+  contractPlaces: LhApiRow[];
+  rawData: unknown;
+};
+
+export function parseLhNoticeDetail(panId: string, rawData: unknown): LhNoticeDetail {
+  const wrapper = Array.isArray(rawData)
+    ? rawData.find((item) => isRecord(item) && ('dsAhflInfo' in item || 'dsSplScdl' in item))
+    : rawData;
+  const record = isRecord(wrapper) ? wrapper : {};
+  const rows = (key: string) => Array.isArray(record[key]) && record[key].every(isRecord)
+    ? record[key] as LhApiRow[]
+    : [];
+  return {
+    panId,
+    schedules: rows('dsSplScdl'),
+    attachments: rows('dsAhflInfo'),
+    complexes: rows('dsSbd'),
+    contractPlaces: rows('dsCtrtPlc'),
+    rawData,
+  };
 }

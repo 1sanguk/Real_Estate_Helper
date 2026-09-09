@@ -32,6 +32,8 @@ export default function ListingDetailPage() {
   const { loading, user } = useAuth();
   const [profile, setProfile] = useState<DashboardProfile | null>(null);
   const [listing, setListing] = useState<OfficialListing | null>(null);
+  const [detail, setDetail] = useState<{ application_schedules: Record<string, unknown>[]; complexes: Record<string, unknown>[] } | null>(null);
+  const [attachments, setAttachments] = useState<Array<{ id: number; name: string; document_type: string; source_url: string }>>([]);
   const [notFound, setNotFound] = useState(false);
   const [listingError, setListingError] = useState('');
   const [pageLoading, setPageLoading] = useState(true);
@@ -84,6 +86,13 @@ export default function ListingDetailPage() {
         }
         setListing(mapOfficialListingRow(data));
       });
+    void Promise.all([
+      client.from('listing_details').select('application_schedules,complexes').eq('source_listing_id', id).maybeSingle(),
+      client.from('listing_attachments').select('id,name,document_type,source_url').eq('source_listing_id', id).order('id'),
+    ]).then(([detailResult, attachmentResult]) => {
+      if (!detailResult.error && detailResult.data) setDetail(detailResult.data);
+      if (!attachmentResult.error && attachmentResult.data) setAttachments(attachmentResult.data);
+    });
   }, [user, id]);
 
   async function saveListing() {
@@ -212,6 +221,41 @@ export default function ListingDetailPage() {
                   {assessment.status}
                 </span>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">{assessment.reason}</p>
+              </section>
+            )}
+
+            {(detail?.complexes.length || detail?.application_schedules.length) && (
+              <section className="rounded-2xl border bg-white p-6">
+                <h2 className="font-extrabold">공급 및 신청 일정</h2>
+                {detail.complexes.map((complex, index) => (
+                  <div key={`complex-${index}`} className="mt-3 rounded-xl bg-secondary p-4 text-sm leading-6">
+                    <strong>{String(complex.SBD_LGO_NM ?? '공급 단지')}</strong>
+                    <p>{String(complex.LCT_ARA_ADR ?? complex.LCT_ARA_DTL_ADR ?? '')}</p>
+                    <p>{complex.SC_AR ? `전용면적 ${String(complex.SC_AR)}㎡` : ''}{complex.HSH_CNT ? ` · ${String(complex.HSH_CNT)}호` : ''}</p>
+                  </div>
+                ))}
+                {detail.application_schedules.map((schedule, index) => (
+                  <div key={`schedule-${index}`} className="mt-3 border-t pt-3 text-sm leading-6">
+                    <strong>{String(schedule.TOY ?? `일정 ${index + 1}`)}</strong>
+                    <p>신청 {String(schedule.RQS_SCD ?? '일자 확인 필요')} {String(schedule.RQS_HR ?? '')}</p>
+                    {Boolean(schedule.CTRT_ST_DT || schedule.CTRT_ED_DT) && <p>계약 {String(schedule.CTRT_ST_DT ?? '')} ~ {String(schedule.CTRT_ED_DT ?? '')}</p>}
+                  </div>
+                ))}
+              </section>
+            )}
+
+            {attachments.length > 0 && (
+              <section className="rounded-2xl border bg-white p-6">
+                <h2 className="font-extrabold">공식 첨부파일</h2>
+                <p className="mt-1 text-sm text-muted-foreground">자격 기준과 최종 제출 서류는 첨부 공고문에서 확인할 수 있습니다.</p>
+                <div className="mt-4 space-y-2">
+                  {attachments.map((attachment) => (
+                    <a key={attachment.id} href={attachment.source_url} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-xl border p-3 text-sm font-bold hover:bg-secondary">
+                      <span>{attachment.name}<small className="ml-2 font-normal text-muted-foreground">{attachment.document_type}</small></span>
+                      <ArrowUpRight className="size-4" />
+                    </a>
+                  ))}
+                </div>
               </section>
             )}
 

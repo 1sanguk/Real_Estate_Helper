@@ -41,15 +41,44 @@ async function main() {
       serviceKey: required('LH_SUPPLY_SERVICE_KEY'),
       announcementUrl: process.env.LH_ANNOUNCEMENT_API_URL,
       supplyUrl: process.env.LH_SUPPLY_API_URL,
+      detailUrl: process.env.LH_SUPPLY_DETAIL_API_URL,
     });
     const announcementRows = await lhClient.fetchAnnouncements();
-    const supplyRows = await lhClient.fetchSupplies(announcementRows.filter(isActiveAnnouncement));
+    const activeAnnouncements = announcementRows.filter(isActiveAnnouncement);
+    const supplyRows = await lhClient.fetchSupplies(activeAnnouncements);
+    const details = await lhClient.fetchDetails(activeAnnouncements);
     const listings = mapLhApiResponse(announcementRows, supplyRows);
     if (!listings.length) throw new Error('공식 API에서 유효한 공고를 찾지 못해 기존 데이터를 보존했습니다.');
     const rawById = new Map(announcementRows.map((row) => [getListingId(row), row]));
     const { error: listingError } = await supabase.from('official_listings')
       .upsert(listings.map((item) => toDatabaseRow(item, rawById.get(item.id) ?? {})), { onConflict: 'source_listing_id' });
     if (listingError) throw listingError;
+    if (details.length) {
+      const syncedAt = new Date().toISOString();
+      const detailRows = details.map((detail) => ({
+        source_listing_id: detail.panId,
+        application_schedules: detail.schedules,
+        complexes: detail.complexes,
+        contract_places: detail.contractPlaces,
+        raw_data: detail.rawData,
+        synced_at: syncedAt,
+      }));
+      const { error: detailError } = await supabase.from('listing_details')
+        .upsert(detailRows, { onConflict: 'source_listing_id' });
+      if (detailError) throw detailError;
+      const attachmentRows = details.flatMap((detail) => detail.attachments.map((item) => ({
+        source_listing_id: detail.panId,
+        name: String(item.CMN_AHFL_NM ?? '첨부파일'),
+        document_type: String(item.SL_PAN_AHFL_DS_CD_NM ?? '기타'),
+        source_url: String(item.AHFL_URL ?? ''),
+        synced_at: syncedAt,
+      }))).filter((item) => item.source_url);
+      if (attachmentRows.length) {
+        const { error: attachmentError } = await supabase.from('listing_attachments')
+          .upsert(attachmentRows, { onConflict: 'source_listing_id,source_url' });
+        if (attachmentError) throw attachmentError;
+      }
+    }
 
     const { data: profiles, error: profileError } = await supabase.from('profiles').select(
       'user_id,birth_date,residence_region,household_size,monthly_income,total_assets,is_homeless,activity_status,household_type,owns_car,car_value,profile_completed_at',
