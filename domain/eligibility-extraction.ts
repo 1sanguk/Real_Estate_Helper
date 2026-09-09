@@ -77,6 +77,25 @@ export function extractEligibilityRules(text: string): ExtractedRule[] {
   if (car) add({ ruleKey: 'car_value_max', operator: 'lte', numericValue: Number(car[1].replaceAll(',', '')), textValue: null, description: `자동차 가액 ${car[1]}만원 이하`, evidenceText: evidenceAround(normalized, car.index, car[0].length), confidence: 0.85 });
   const income = /도시근로자[^.。\n]{0,140}?월평균소득[^.。\n]{0,100}?(\d{2,3})\s*%\s*이하/.exec(normalized);
   if (income) add({ ruleKey: 'income_percent_max', operator: 'lte', numericValue: Number(income[1]), textValue: null, description: `도시근로자 월평균소득 ${income[1]}% 이하`, evidenceText: evidenceAround(normalized, income.index, income[0].length), confidence: 0.75 });
+  const householdIncomePattern = /([1-9])\s*인\s*가구[^.。\n]{0,100}?([1-9][0-9,]{5,})\s*원/g;
+  for (const match of normalized.matchAll(householdIncomePattern)) {
+    const householdSize = Number(match[1]);
+    const amountWon = Number(match[2].replaceAll(',', ''));
+    if (!Number.isFinite(amountWon) || amountWon < 100_000) continue;
+    add({ ruleKey: 'monthly_income_max', operator: 'lte', numericValue: Math.floor(amountWon / 10_000), textValue: String(householdSize), description: `${householdSize}인 가구 월평균소득 ${match[2]}원 이하`, evidenceText: evidenceAround(normalized, match.index ?? 0, match[0].length), confidence: 0.8 });
+  }
+  const marriageYears = /혼인(?:신고)?일[^.。\n]{0,80}?(\d{1,2})년\s*이내/.exec(normalized);
+  if (marriageYears) add({ ruleKey: 'marriage_years_max', operator: 'lte', numericValue: Number(marriageYears[1]), textValue: null, description: `혼인 기간 ${marriageYears[1]}년 이내`, evidenceText: evidenceAround(normalized, marriageYears.index, marriageYears[0].length), confidence: 0.85 });
+  const subscriptionPayments = /청약저축[^.。\n]{0,100}?(\d{1,3})회\s*이상/.exec(normalized);
+  if (subscriptionPayments) add({ ruleKey: 'subscription_payment_min', operator: 'gte', numericValue: Number(subscriptionPayments[1]), textValue: null, description: `청약저축 납입 ${subscriptionPayments[1]}회 이상`, evidenceText: evidenceAround(normalized, subscriptionPayments.index, subscriptionPayments[0].length), confidence: 0.85 });
+  const residenceYears = /(?:해당|현재)\s*(?:지역|시|구)[^.。\n]{0,100}?(\d{1,2})년\s*이상\s*계속\s*거주/.exec(normalized);
+  if (residenceYears) add({ ruleKey: 'residence_months_min', operator: 'gte', numericValue: Number(residenceYears[1]) * 12, textValue: null, description: `해당 지역 ${residenceYears[1]}년 이상 계속 거주`, evidenceText: evidenceAround(normalized, residenceYears.index, residenceYears[0].length), confidence: 0.8 });
+  const graduationYears = /졸업|중퇴/.test(normalized) ? /(?:졸업|중퇴)[^.。\n]{0,100}?(\d{1,2})년\s*이내/.exec(normalized) : null;
+  if (graduationYears) add({ ruleKey: 'graduation_years_max', operator: 'lte', numericValue: Number(graduationYears[1]), textValue: null, description: `졸업 또는 중퇴 후 ${graduationYears[1]}년 이내`, evidenceText: evidenceAround(normalized, graduationYears.index, graduationYears[0].length), confidence: 0.8 });
+  const youthActivity = /대학생|취업준비생/.exec(normalized);
+  if (youthActivity) add({ ruleKey: 'activity_status', operator: 'in', numericValue: null, textValue: youthActivity[0] === '대학생' ? 'student,prospective_student' : 'job_seeker,unemployed', description: `${youthActivity[0]} 자격 확인`, evidenceText: evidenceAround(normalized, youthActivity.index, youthActivity[0].length), confidence: 0.65 });
+  const children = /자녀가\s*있는|미성년\s*자녀|태아를\s*포함/.exec(normalized);
+  if (children) add({ ruleKey: 'children_required', operator: 'eq', numericValue: null, textValue: 'true', description: '자녀 또는 태아 요건', evidenceText: evidenceAround(normalized, children.index, children[0].length), confidence: 0.7 });
   const homeless = /무주택세대구성원|무주택자인/.exec(normalized);
   if (homeless) add({ ruleKey: 'homeless_required', operator: 'eq', numericValue: null, textValue: 'true', description: '무주택 요건', evidenceText: evidenceAround(normalized, homeless.index, homeless[0].length), confidence: 0.9 });
   return rules;

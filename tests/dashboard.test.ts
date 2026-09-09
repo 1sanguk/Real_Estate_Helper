@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assessListing, assessListingWithRules, calculateAge, mapLhApiResponse, mapOfficialListingRow, profileCompletion, type DashboardProfile } from '../domain/dashboard.ts';
+import { assessListing, assessListingWithRules, calculateAge, getEligibilityChecks, isActiveListingStatus, mapLhApiResponse, mapOfficialListingRow, profileCompletion, type DashboardProfile } from '../domain/dashboard.ts';
 
 const completeProfile: DashboardProfile = { birth_date:'1990-09-08', residence_region:'경기도', household_size:1, monthly_income:180, total_assets:2500, is_homeless:true, activity_status:'employed', household_type:'single', owns_car:false, car_value:null, profile_completed_at:'2026-09-08T00:00:00Z' };
 
@@ -31,3 +31,32 @@ test('저장된 월소득 180은 누락으로 판단하지 않는다',()=>{const
 test('무주택·동일 지역이면 가능성 있음으로, 유주택이면 어려움으로 판정한다',()=>{const listing=mapLhApiResponse([{PAN_ID:'P-2',PAN_NM:'경기 국민임대',CNP_CD_NM:'경기도'}],[])[0];assert.equal(assessListing(completeProfile,listing).status,'가능성 있음');assert.equal(assessListing({...completeProfile,is_homeless:false},listing).status,'어려움')});
 test('누락된 프로필 항목 이름과 완성도를 반환한다',()=>{const result=profileCompletion({...completeProfile,birth_date:null,monthly_income:null});assert.equal(result.percent,78);assert.deepEqual(result.missing,['생년월일','월평균 소득'])});
 test('공고 상세 조회를 위해 DB 행을 화면 공고 형식으로 변환한다',()=>{const listing=mapOfficialListingRow({source_listing_id:'P-3',agency:'LH',title:'상세 테스트 공고',program:'국민임대',region:'경기도',address:null,area:null,units:null,published_at:'2026-09-08',application_period:null,status:'공고중',minimum_age:null,source_url:'https://example.com'});assert.equal(listing.id,'P-3');assert.equal(listing.address,undefined);assert.equal(listing.publishedAt,'2026-09-08')});
+
+test('진행 중 상태만 활성 공고로 구분한다', () => {
+  assert.equal(isActiveListingStatus('공고중'), true);
+  assert.equal(isActiveListingStatus('정정공고중'), true);
+  assert.equal(isActiveListingStatus('접수중'), true);
+  assert.equal(isActiveListingStatus('접수마감'), false);
+});
+
+test('공고 조건별 충족·미충족·확인 필요 근거를 반환한다', () => {
+  const listing = mapLhApiResponse([{ PAN_ID: 'checks', PAN_NM: '경기 공고', CNP_CD_NM: '경기도' }], [])[0];
+  const checks = getEligibilityChecks(completeProfile, listing, [
+    { rule_key: 'total_assets_max', operator: 'lte', numeric_value: 2000, text_value: null, description: '총자산 2,000만원 이하' },
+    { rule_key: 'income_percent_max', operator: 'lte', numeric_value: 100, text_value: null, description: '월평균소득 100% 이하' },
+  ]);
+  assert.equal(checks.find((check) => check.label === '무주택')?.status, '충족');
+  assert.equal(checks.find((check) => check.label === '총자산')?.status, '미충족');
+  assert.equal(checks.find((check) => check.label === '소득')?.status, '확인 필요');
+});
+
+test('혼인 기간과 청약 납입 횟수를 실제 프로필 값으로 판정한다', () => {
+  const listing = mapLhApiResponse([{ PAN_ID: 'family', PAN_NM: '신혼 공고', CNP_CD_NM: '경기도' }], [])[0];
+  const profile = { ...completeProfile, marriage_date: '2024-01-01', subscription_payment_count: 12 };
+  const result = assessListingWithRules(profile, listing, [
+    { rule_key: 'marriage_years_max', operator: 'lte', numeric_value: 7, text_value: null, description: '혼인 7년 이내', confidence: 0.9 },
+    { rule_key: 'subscription_payment_min', operator: 'gte', numeric_value: 24, text_value: null, description: '청약 24회 이상', confidence: 0.9 },
+  ]);
+  assert.equal(result.status, '어려움');
+  assert.match(result.reason, /청약 24회 이상/);
+});

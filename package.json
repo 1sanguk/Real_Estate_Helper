@@ -9,9 +9,9 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "sync:listings": "node --experimental-strip-types scripts/sync-housing-notices.ts",
-    "analyze:documents": "node --experimental-strip-types scripts/analyze-listing-documents.ts",
-    "recalculate:matches": "node --experimental-strip-types scripts/recalculate-listing-matches.ts",
+    "sync:listings": "node --env-file-if-exists=.env --experimental-strip-types scripts/sync-housing-notices.ts",
+    "analyze:documents": "node --env-file-if-exists=.env --experimental-strip-types scripts/analyze-listing-documents.ts",
+    "recalculate:matches": "node --env-file-if-exists=.env --experimental-strip-types scripts/recalculate-listing-matches.ts",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "format": "oxfmt"

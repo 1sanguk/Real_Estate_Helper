@@ -12,15 +12,22 @@
 }
 :root {
  --font-sans:Arial,'Apple SD Gothic Neo','Noto Sans KR',sans-serif; --font-brand:Arial,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
- --background:#f7f8f6; --foreground:#17201f; --card:#fff; --card-foreground:#17201f; --popover:#fff; --popover-foreground:#17201f;
- --primary:#087663; --primary-foreground:#fff; --secondary:#eef2ef; --secondary-foreground:#263a37; --muted:#eef1ef; --muted-foreground:#697471;
- --accent:#e2f3ed; --accent-foreground:#075e50; --destructive:#c7483a; --border:#e2e7e4; --input:#dce3df; --ring:#087663; --radius:.75rem;
+ --background:#fffaf3; --foreground:#372823; --card:#fffefa; --card-foreground:#372823; --popover:#fffefa; --popover-foreground:#372823;
+ --primary:#df6047; --primary-foreground:#fff; --secondary:#fff0df; --secondary-foreground:#704234; --muted:#f8eee5; --muted-foreground:#7c6a63;
+ --accent:#ffe2ae; --accent-foreground:#704017; --destructive:#bd3e46; --border:#f0dace; --input:#e9cfc2; --ring:#df6047; --radius:.9rem;
 }
-*{border-color:var(--border)} html{scroll-behavior:smooth} body{margin:0;font-family:var(--font-sans);background:var(--background);color:var(--foreground)} button,input{font:inherit}.font-brand{font-family:var(--font-brand)}
-.section-kicker{margin-bottom:.3rem;font-size:10px;font-weight:900;letter-spacing:.16em;color:var(--primary)}
-.hero-panel{background:linear-gradient(120deg,#102f2c 0%,#174b43 62%,#0a6a5b 100%);min-height:286px;display:flex;align-items:center}
-.hero-panel:before{content:'';position:absolute;width:420px;height:420px;right:-100px;top:-210px;border:1px solid rgba(255,255,255,.12);border-radius:50%;box-shadow:0 0 0 54px rgba(255,255,255,.035),0 0 0 108px rgba(255,255,255,.025)}
-.hero-orbit{position:absolute;right:12%;bottom:19%;display:grid;place-items:center;width:72px;height:72px;border-radius:24px 24px 24px 7px;transform:rotate(45deg);color:#173c36;background:#9be5cb;box-shadow:0 18px 40px rgba(0,0,0,.18)} .hero-orbit svg{transform:rotate(-45deg)}
-.listing-card{box-shadow:0 2px 5px rgba(19,47,42,.025)}
+*{border-color:var(--border)} html{scroll-behavior:smooth} body{margin:0;font-family:var(--font-sans);background:radial-gradient(circle at 5% 0%,#fff0d8 0,transparent 28rem),linear-gradient(180deg,#fffdf8 0,#fff8ef 100%);color:var(--foreground);word-break:keep-all} button,input,select,textarea{font:inherit}.font-brand{font-family:var(--font-brand)}
+a,button,input,select,textarea{transition:border-color .18s ease,background-color .18s ease,color .18s ease,box-shadow .18s ease,transform .18s ease}
+button:not(:disabled):active,a:active{transform:translateY(1px)}
+input,select,textarea{background:#fffefa;border-color:var(--input)!important;outline:none} input:focus,select:focus,textarea:focus{border-color:var(--primary)!important;box-shadow:0 0 0 3px rgba(223,96,71,.14)}
+.section-kicker{margin-bottom:.4rem;font-size:11px;font-weight:900;letter-spacing:.14em;color:#c84f39}
+.hero-panel{background:linear-gradient(125deg,#c94f3a 0%,#e8734f 53%,#f3a452 100%);min-height:286px;display:flex;align-items:center;box-shadow:0 24px 55px rgba(184,76,48,.22)}
+.hero-panel:before{content:'';position:absolute;width:420px;height:420px;right:-100px;top:-210px;border:1px solid rgba(255,255,255,.22);border-radius:50%;box-shadow:0 0 0 54px rgba(255,245,210,.08),0 0 0 108px rgba(255,255,255,.05)}
+.hero-panel:after{content:'';position:absolute;width:120px;height:120px;right:12%;bottom:-62px;border-radius:50%;background:#ffd788;opacity:.65}
+.hero-orbit{position:absolute;right:12%;bottom:19%;display:grid;place-items:center;width:72px;height:72px;border-radius:24px 24px 24px 7px;transform:rotate(45deg);color:#8a3929;background:#ffe39c;box-shadow:0 18px 40px rgba(116,48,33,.18)} .hero-orbit svg{transform:rotate(-45deg)}
+.listing-card{box-shadow:0 10px 30px rgba(110,62,42,.07)}
+.bg-white{background-color:var(--card)!important}.shadow-sm{box-shadow:0 10px 32px rgba(110,62,42,.07)!important}
+header.sticky{background:rgba(255,250,243,.9)!important;border-color:rgba(224,184,162,.7)!important}
+article.rounded-2xl{box-shadow:0 8px 26px rgba(110,62,42,.055)} article.rounded-2xl:hover{border-color:#e9b49c;box-shadow:0 14px 34px rgba(159,76,48,.1);transform:translateY(-1px)}
 @media(max-width:767px){.hero-orbit{opacity:.28;right:6%;bottom:10%}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}

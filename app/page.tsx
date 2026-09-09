@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -21,6 +21,7 @@ import { Progress } from '@/components/ui/progress';
 import {
   calculateAge,
   profileCompletion,
+  getEligibilityChecks,
   assessListing,
   assessListingWithRules,
   mapOfficialListingRow,
@@ -29,6 +30,12 @@ import {
   type StoredEligibilityRule,
 } from '@/domain/dashboard';
 import { useAuth } from '@/features/auth/auth-context';
+import {
+  loadListingSearchState,
+  loadViewedListingIds,
+  markListingViewed,
+  saveListingSearchState,
+} from '@/features/listings/listing-browser-state';
 import { useUserPreferences } from '@/features/user-data/use-user-preferences';
 import { getSupabaseClient } from '@/lib/supabase/client';
 
@@ -53,18 +60,38 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
   const [listings, setListings] = useState<OfficialListing[]>([]);
   const [query, setQuery] = useState('');
   const [region, setRegion] = useState('');
-  const [possibleOnly, setPossibleOnly] = useState(false);
+  const [possibleOnly, setPossibleOnly] = useState(true);
+  const [viewedListingIds, setViewedListingIds] = useState<string[]>([]);
+  const searchStateReady = useRef(false);
   const [listingError, setListingError] = useState('');
   const [listingsLoading, setListingsLoading] = useState(true);
   const [rulesByListing, setRulesByListing] = useState<Record<string, StoredEligibilityRule[]>>({});
   const [actionMessage, setActionMessage] = useState('');
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [profileError, setProfileError] = useState('');
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const { savedListingIds, toggleSavedListing } = useUserPreferences(user?.id);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
   }, [loading, user, router]);
+  useEffect(() => {
+    if (!user) return;
+    searchStateReady.current = false;
+    const storedState = loadListingSearchState(user.id, savedOnly);
+    setQuery(storedState.query);
+    setRegion(storedState.region);
+    setPossibleOnly(storedState.possibleOnly);
+    setViewedListingIds(loadViewedListingIds(user.id));
+    queueMicrotask(() => {
+      searchStateReady.current = true;
+    });
+  }, [user, savedOnly]);
+  useEffect(() => {
+    if (!user || !searchStateReady.current) return;
+    saveListingSearchState(user.id, savedOnly, { query, region, possibleOnly });
+  }, [user, savedOnly, query, region, possibleOnly]);
   useEffect(() => {
     if (!user) return;
     const client = getSupabaseClient();
@@ -75,7 +102,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
     void client
       .from('profiles')
       .select(
-        'birth_date,residence_region,household_size,monthly_income,total_assets,is_homeless,activity_status,household_type,owns_car,car_value,profile_completed_at',
+        'birth_date,residence_region,household_size,monthly_income,total_assets,is_homeless,activity_status,household_type,owns_car,car_value,is_married,has_children,child_count,marriage_date,expected_marriage_date,spouse_has_income,youngest_child_birth_date,is_pregnant,graduation_date,receives_livelihood_benefit,receives_housing_benefit,is_near_poverty,is_supported_single_parent,subscription_payment_count,residence_start_date,profile_completed_at',
       )
       .eq('user_id', user.id)
       .single()
@@ -90,19 +117,21 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
         }
         setProfile(data as DashboardProfile);
       });
-    void client.from('official_listings').select('*').order('published_at', { ascending: false }).then((listingResult) => {
+    void client.from('official_listings').select('*').in('status', ['공고중', '정정공고중', '접수중']).order('published_at', { ascending: false }).then((listingResult) => {
       setListingsLoading(false);
       if (listingResult.error) setListingError('공고를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
       if (!listingResult.error && listingResult.data) {
         setListings(listingResult.data.map(mapOfficialListingRow));
       }
     });
-    void client.from('listing_eligibility_rules').select('source_listing_id,rule_key,operator,numeric_value,text_value,description').then(({ data, error }) => {
+    void client.from('listing_eligibility_rules').select('source_listing_id,rule_key,operator,numeric_value,text_value,description,confidence').then(({ data, error }) => {
       if (error || !data) return;
       const grouped: Record<string, StoredEligibilityRule[]> = {};
       for (const row of data) (grouped[row.source_listing_id] ??= []).push(row);
       setRulesByListing(grouped);
     });
+    void client.from('listing_sync_runs').select('completed_at').eq('status', 'succeeded').order('completed_at', { ascending: false }).limit(1).maybeSingle().then(({ data }) => setLastSyncedAt(data?.completed_at ?? null));
+    void client.from('user_notifications').select('id', { count: 'exact', head: true }).eq('user_id', user.id).is('read_at', null).then(({ count }) => setUnreadNotificationCount(count ?? 0));
   }, [user, router]);
 
   const age = calculateAge(profile?.birth_date ?? null);
@@ -114,6 +143,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
       profile
         ? listings.map((listing) => ({
             listing,
+            checks: getEligibilityChecks(profile, listing, rulesByListing[listing.id] ?? []),
             assessment: rulesByListing[listing.id]?.length
               ? assessListingWithRules(profile, listing, rulesByListing[listing.id])
               : assessListing(profile, listing),
@@ -140,6 +170,13 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
     } catch { setActionMessage('관심 공고 저장에 실패했습니다. 다시 시도해 주세요.'); }
     finally { setPendingId(null); }
   }
+  function viewListing(id: string) {
+    if (!user) return;
+    markListingViewed(user.id, id);
+    setViewedListingIds((current) =>
+      current.includes(id) ? current : [...current, id],
+    );
+  }
 
   if (loading || !user || (!profile && !profileError))
     return (
@@ -163,6 +200,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
             <a href="#listings">실제 공고</a>
             <Link href="/saved">관심 공고</Link>
             <Link href="/profile/setup">내 조건 수정</Link>
+            <Link href="/settings">알림·개인정보{unreadNotificationCount > 0 ? ` ${unreadNotificationCount}` : ''}</Link>
             <Button
               type="button"
               variant="outline"
@@ -192,14 +230,17 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
               수집된 공식 공고 기준
             </span>
             <h1 className="max-w-3xl text-4xl font-black leading-tight tracking-[-.045em]">
-              현재 확인된 실제 임대 공고{' '}
-              <span className="text-[#9be5cb]">
-                {listings.length}건
+              내가 지원할 수 있는 공고{' '}
+              <span className="text-[#ffe39c]">
+                {possibleCount}건
               </span>
             </h1>
             <p className="mt-3 text-white/70">
-              내 조건 기준 가능성 있음 {possibleCount}건 · 목록을 보려면
-              클릭하세요.
+              내 조건으로 먼저 추린 결과입니다. 목록을 보려면 클릭하세요.
+            </p>
+            <p className="mt-8 border-t border-white/15 pt-4 text-sm text-white/65">
+              현재 확인된 실제 임대 공고 {listings.length}건
+              {lastSyncedAt ? ` · 최근 갱신 ${new Date(lastSyncedAt).toLocaleString('ko-KR')}` : ''}
             </p>
           </a>
           <section className="rounded-[28px] border bg-white p-6 shadow-sm">
@@ -284,14 +325,14 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
           <div className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-white p-4">
             <label className="flex flex-col gap-1 text-sm">공고 검색<input className="rounded border p-2" placeholder="공고명, 지역, 주소, 사업 유형" value={query} onChange={event => setQuery(event.target.value)} /></label>
             <label className="flex flex-col gap-1 text-sm">지역<select className="rounded border p-2" value={region} onChange={event => setRegion(event.target.value)}><option value="">전체 지역</option>{[...new Set(listings.map(item => item.region))].sort().map(value => <option key={value}>{value}</option>)}</select></label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={possibleOnly} onChange={event => setPossibleOnly(event.target.checked)} />가능성 있는 공고만</label>
-            <Button variant="outline" onClick={() => { setQuery(''); setRegion(''); setPossibleOnly(false); }}>검색 초기화</Button>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={possibleOnly} onChange={event => setPossibleOnly(event.target.checked)} />내가 지원할 수 있는 공고만</label>
+            <Button className="min-h-10 h-auto whitespace-normal break-keep px-4 py-2" variant="outline" onClick={() => { setQuery(''); setRegion(''); setPossibleOnly(true); }}>검색 조건 초기화</Button>
           </div>
           {actionMessage && <p role="status" className="mb-4 rounded border p-3">{actionMessage}</p>}
           {listingError && <p role="alert" className="mb-4 text-destructive">{listingError} <button onClick={() => window.location.reload()}>다시 시도</button></p>}
           {listingsLoading ? <p className="p-6">공고를 불러오고 있습니다…</p> : !listingError && visible.length === 0 && <p className="rounded-xl border p-6">{listings.length === 0 ? '아직 수집된 공고가 없습니다. 공식 공고가 수집되면 여기에 표시됩니다.' : savedOnly ? '조건에 맞는 관심 공고가 없습니다. 홈에서 공고를 저장하거나 검색 조건을 변경해 주세요.' : '검색 조건에 맞는 공고가 없습니다. 검색 조건을 변경해 주세요.'}</p>}
           <div className="space-y-3">
-            {visible.map(({ listing, assessment }) => (
+            {visible.map(({ listing, assessment, checks }) => (
               <article
                 key={listing.id}
                 className="rounded-2xl border bg-white p-6"
@@ -299,7 +340,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                 <div className="grid gap-5 lg:grid-cols-[1fr_260px] lg:items-center">
                   <div>
                     <div className="mb-2 flex items-center gap-2">
-                      <span className="rounded-md bg-[#eaf2ff] px-2 py-1 text-xs font-black text-[#315fa8]">
+                      <span className="rounded-md bg-[#fff0d5] px-2 py-1 text-xs font-black text-[#a95728]">
                         {listing.agency}
                       </span>
                       <span className="text-xs font-bold text-muted-foreground">
@@ -307,8 +348,8 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                         {listing.publishedAt}
                       </span>
                     </div>
-                    <h3 className="text-lg font-extrabold">
-                      <Link href={`/listings/${encodeURIComponent(listing.id)}`} className="hover:underline">
+                    <h3 className={`text-lg font-extrabold ${viewedListingIds.includes(listing.id) ? 'text-muted-foreground' : ''}`}>
+                      <Link href={`/listings/${encodeURIComponent(listing.id)}`} onClick={() => viewListing(listing.id)} className="hover:underline">
                         {listing.title}
                       </Link>
                     </h3>
@@ -333,11 +374,23 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                     <p className="mt-1 text-xs leading-5 text-muted-foreground">
                       {assessment.reason}
                     </p>
-                    <div className="mt-3 flex gap-2">
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {checks.slice(0, 5).map((check) => (
+                        <span
+                          key={check.key}
+                          title={check.detail}
+                          className={`rounded-full px-2 py-1 text-xs font-bold ${check.status === '충족' ? 'bg-primary/10 text-primary' : check.status === '미충족' ? 'bg-destructive/10 text-destructive' : 'bg-[#fff4d6] text-[#76580d]'}`}
+                        >
+                          {check.label} {check.status}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
+                        className="min-h-9 h-auto whitespace-normal break-keep px-3 py-2"
                         disabled={pendingId !== null}
                         onClick={() => void saveListing(listing.id)}
                       >
@@ -355,7 +408,8 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                       </Button>
                       <Link
                         href={`/listings/${encodeURIComponent(listing.id)}`}
-                        className="inline-flex h-7 items-center gap-1 rounded-lg border px-2.5 text-xs font-bold"
+                        onClick={() => viewListing(listing.id)}
+                        className="inline-flex min-h-9 items-center gap-1 rounded-lg border px-3 py-2 text-center text-xs font-bold whitespace-normal break-keep leading-snug"
                       >
                         상세·서류 보기
                       </Link>
@@ -363,7 +417,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                         href={listing.sourceUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex h-7 items-center gap-1 rounded-lg bg-primary px-2.5 text-xs font-bold text-white"
+                        className="inline-flex min-h-9 items-center gap-1 rounded-lg bg-primary px-3 py-2 text-center text-xs font-bold text-white whitespace-normal break-keep leading-snug"
                       >
                         공식 원문
                         <ArrowUpRight className="size-3.5" />
@@ -407,6 +461,11 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                   <ArrowUpRight className="ml-1 inline size-4" />
                 </a>
               ))}
+            </div>
+            <div className="mt-4 space-y-2 text-sm">
+              <p><strong className="text-primary">LH 자동 수집 중</strong> · 현재 화면에 실제 진행 중 공고만 표시</p>
+              <p><strong>HUG 연결 준비</strong> · 공식 든든전세 API 승인 및 주소 등록 후 자동 수집</p>
+              <p><strong>SH 공식 출처 확인 중</strong> · 공급계획 자료를 모집공고로 오인해 표시하지 않음</p>
             </div>
           </div>
         </section>

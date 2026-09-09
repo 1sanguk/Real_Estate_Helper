@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
@@ -9,6 +8,7 @@ import {
   CircleAlert,
   FileCheck2,
   Heart,
+  MapPinned,
   ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import { Progress } from '@/components/ui/progress';
 import {
   assessListing,
   assessListingWithRules,
+  getEligibilityChecks,
   mapOfficialListingRow,
   type DashboardProfile,
   type OfficialListing,
@@ -24,6 +25,7 @@ import {
 } from '@/domain/dashboard';
 import { commonRequiredDocuments } from '@/domain/documents';
 import { useAuth } from '@/features/auth/auth-context';
+import { markListingViewed } from '@/features/listings/listing-browser-state';
 import { useUserPreferences } from '@/features/user-data/use-user-preferences';
 import { getSupabaseClient } from '@/lib/supabase/client';
 
@@ -38,6 +40,7 @@ export default function ListingDetailPage() {
   const [attachments, setAttachments] = useState<Array<{ id: number; name: string; document_type: string; source_url: string }>>([]);
   const [rules, setRules] = useState<StoredEligibilityRule[]>([]);
   const [requiredDocuments, setRequiredDocuments] = useState<Array<{ id: number; document_name: string; requirement_type: string; issuer: string | null; evidence_text: string }>>([]);
+  const [reviewStatus, setReviewStatus] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [listingError, setListingError] = useState('');
   const [pageLoading, setPageLoading] = useState(true);
@@ -66,7 +69,7 @@ export default function ListingDetailPage() {
     void client
       .from('profiles')
       .select(
-        'birth_date,residence_region,household_size,monthly_income,total_assets,is_homeless,activity_status,household_type,owns_car,car_value,profile_completed_at',
+        'birth_date,residence_region,household_size,monthly_income,total_assets,is_homeless,activity_status,household_type,owns_car,car_value,is_married,has_children,child_count,marriage_date,expected_marriage_date,spouse_has_income,youngest_child_birth_date,is_pregnant,graduation_date,receives_livelihood_benefit,receives_housing_benefit,is_near_poverty,is_supported_single_parent,subscription_payment_count,residence_start_date,profile_completed_at',
       )
       .eq('user_id', user.id)
       .single()
@@ -95,13 +98,19 @@ export default function ListingDetailPage() {
       client.from('listing_attachments').select('id,name,document_type,source_url').eq('source_listing_id', id).order('id'),
       client.from('listing_eligibility_rules').select('rule_key,operator,numeric_value,text_value,description,evidence_text,confidence').eq('source_listing_id', id).order('id'),
       client.from('listing_required_documents').select('id,document_name,requirement_type,issuer,evidence_text').eq('source_listing_id', id).order('requirement_type').order('id'),
-    ]).then(([detailResult, attachmentResult, ruleResult, documentResult]) => {
+      client.from('listing_reviews').select('review_status').eq('source_listing_id', id).maybeSingle(),
+    ]).then(([detailResult, attachmentResult, ruleResult, documentResult, reviewResult]) => {
       if (!detailResult.error && detailResult.data) setDetail(detailResult.data);
       if (!attachmentResult.error && attachmentResult.data) setAttachments(attachmentResult.data);
       if (!ruleResult.error && ruleResult.data) setRules(ruleResult.data);
       if (!documentResult.error && documentResult.data) setRequiredDocuments(documentResult.data);
+      if (!reviewResult.error && reviewResult.data) setReviewStatus(reviewResult.data.review_status);
     });
   }, [user, id]);
+
+  useEffect(() => {
+    if (user && listing) markListingViewed(user.id, listing.id);
+  }, [user, listing]);
 
   async function saveListing() {
     if (savePending || !listing) return;
@@ -141,6 +150,9 @@ export default function ListingDetailPage() {
   const assessment = profile && listing
     ? rules.length ? assessListingWithRules(profile, listing, rules) : assessListing(profile, listing)
     : null;
+  const eligibilityChecks = profile && listing
+    ? getEligibilityChecks(profile, listing, rules)
+    : [];
   const displayedDocuments = requiredDocuments.length
     ? requiredDocuments.map((document) => ({ id: document.id, label: document.document_name, issuer: document.issuer ?? '공고문 확인', requirementType: document.requirement_type, evidence: document.evidence_text }))
     : commonRequiredDocuments.map((document) => ({ ...document, requirementType: '공통 안내', evidence: '' }));
@@ -155,13 +167,14 @@ export default function ListingDetailPage() {
     <main className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-4xl items-center gap-3 px-8">
-          <Link
-            href="/"
+          <button
+            type="button"
+            onClick={() => router.back()}
             className="flex items-center gap-1 text-sm font-bold text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-4" />
             목록으로
-          </Link>
+          </button>
         </div>
       </header>
       <div className="mx-auto max-w-4xl space-y-6 px-8 py-9">
@@ -185,12 +198,14 @@ export default function ListingDetailPage() {
           <>
             <section className="rounded-2xl border bg-white p-6">
               <div className="mb-2 flex items-center gap-2">
-                <span className="rounded-md bg-[#eaf2ff] px-2 py-1 text-xs font-black text-[#315fa8]">
+                <span className="rounded-md bg-[#fff0d5] px-2 py-1 text-xs font-black text-[#a95728]">
                   {listing.agency}
                 </span>
                 <span className="text-xs font-bold text-muted-foreground">
                   {listing.program} · {listing.status} · 공고일 {listing.publishedAt}
                 </span>
+                {reviewStatus === 'approved' && <span className="rounded-md bg-primary/10 px-2 py-1 text-xs font-black text-primary">관리자 검수 완료</span>}
+                {reviewStatus === 'needs_correction' && <span className="rounded-md bg-destructive/10 px-2 py-1 text-xs font-black text-destructive">검수 중</span>}
               </div>
               <h1 className="text-2xl font-black tracking-[-.03em]">{listing.title}</h1>
               <p className="mt-3 text-sm text-muted-foreground">
@@ -205,8 +220,8 @@ export default function ListingDetailPage() {
               {listing.minimumAge && (
                 <p className="mt-2 text-sm font-bold">지원 연령 만 {listing.minimumAge}세 이상</p>
               )}
-              <div className="mt-4 flex gap-2">
-                <Button type="button" variant="outline" disabled={savePending} onClick={() => void saveListing()}>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button className="min-h-10 h-auto whitespace-normal break-keep px-4 py-2" type="button" variant="outline" disabled={savePending} onClick={() => void saveListing()}>
                   <Heart className="size-4" fill={savedListingIds.includes(listing.id) ? 'currentColor' : 'none'} />
                   {savedListingIds.includes(listing.id) ? '저장됨' : '관심 저장'}
                 </Button>
@@ -214,11 +229,12 @@ export default function ListingDetailPage() {
                   href={listing.sourceUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex h-9 items-center gap-1 rounded-lg bg-primary px-3 text-sm font-bold text-white"
+                  className="inline-flex min-h-10 items-center gap-1 rounded-lg bg-primary px-4 py-2 text-center text-sm font-bold text-white whitespace-normal break-keep"
                 >
                   공식 원문 확인
                   <ArrowUpRight className="size-4" />
                 </a>
+                {listing.address && <MapLinks address={listing.address} />}
               </div>
             </section>
 
@@ -234,6 +250,17 @@ export default function ListingDetailPage() {
                   {assessment.status}
                 </span>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">{assessment.reason}</p>
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  {eligibilityChecks.map((check) => (
+                    <div key={check.key} className="rounded-xl border p-3">
+                      <div className="flex items-center justify-between gap-3 text-sm font-bold">
+                        <span>{check.label}</span>
+                        <span className={check.status === '충족' ? 'text-primary' : check.status === '미충족' ? 'text-destructive' : 'text-[#8a6512]'}>{check.status}</span>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{check.detail}</p>
+                    </div>
+                  ))}
+                </div>
               </section>
             )}
 
@@ -254,13 +281,15 @@ export default function ListingDetailPage() {
             {(detail?.complexes.length || detail?.application_schedules.length) && (
               <section className="rounded-2xl border bg-white p-6">
                 <h2 className="font-extrabold">공급 및 신청 일정</h2>
-                {detail.complexes.map((complex, index) => (
-                  <div key={`complex-${index}`} className="mt-3 rounded-xl bg-secondary p-4 text-sm leading-6">
+                {detail.complexes.map((complex, index) => {
+                  const complexAddress = String(complex.LCT_ARA_ADR ?? complex.LCT_ARA_DTL_ADR ?? '');
+                  return <div key={`complex-${index}`} className="mt-3 rounded-xl bg-secondary p-4 text-sm leading-6">
                     <strong>{String(complex.SBD_LGO_NM ?? '공급 단지')}</strong>
-                    <p>{String(complex.LCT_ARA_ADR ?? complex.LCT_ARA_DTL_ADR ?? '')}</p>
+                    <p>{complexAddress}</p>
                     <p>{complex.SC_AR ? `전용면적 ${String(complex.SC_AR)}㎡` : ''}{complex.HSH_CNT ? ` · ${String(complex.HSH_CNT)}호` : ''}</p>
-                  </div>
-                ))}
+                    {complexAddress && <div className="mt-3"><MapLinks address={complexAddress} /></div>}
+                  </div>;
+                })}
                 {detail.application_schedules.map((schedule, index) => (
                   <div key={`schedule-${index}`} className="mt-3 border-t pt-3 text-sm leading-6">
                     <strong>{String(schedule.TOY ?? `일정 ${index + 1}`)}</strong>
@@ -334,5 +363,22 @@ export default function ListingDetailPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function MapLinks({ address }: { address: string }) {
+  const encodedAddress = encodeURIComponent(address);
+  const linkClassName = 'inline-flex min-h-9 items-center gap-1 rounded-lg border bg-white px-3 py-2 text-center text-xs font-bold whitespace-normal break-keep leading-snug hover:bg-secondary';
+  return (
+    <div className="flex flex-wrap gap-2">
+      <a className={linkClassName} href={`https://map.naver.com/p/search/${encodedAddress}`} target="_blank" rel="noreferrer">
+        <MapPinned className="size-4" />
+        네이버지도
+      </a>
+      <a className={linkClassName} href={`https://map.kakao.com/link/search/${encodedAddress}`} target="_blank" rel="noreferrer">
+        <MapPinned className="size-4" />
+        카카오맵
+      </a>
+    </div>
   );
 }

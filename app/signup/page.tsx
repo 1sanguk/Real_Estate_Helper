@@ -21,6 +21,7 @@ export default function SignupPage() {
   const [checkStatus, setCheckStatus] = useState(initialCheckStatus);
   const [submitMessage, setSubmitMessage] = useState<SubmitMessage>(null);
   const [loading, setLoading] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
   const update = (key: keyof typeof form, value: string) => {
     setForm(current => ({ ...current, [key]: value }));
@@ -55,6 +56,7 @@ export default function SignupPage() {
     if (validation) return setSubmitMessage({ type: 'error', text: validation });
     if (form.password !== form.confirmPassword) return setSubmitMessage({ type: 'error', text: '비밀번호 확인이 일치하지 않습니다.' });
     if (checkStatus.username !== 'available' || checkStatus.nickname !== 'available') return setSubmitMessage({ type: 'error', text: '아이디와 닉네임 중복 확인을 완료해 주세요.' });
+    if (!agreed) return setSubmitMessage({ type: 'error', text: '서비스 이용 안내와 개인정보 처리 안내에 동의해 주세요.' });
     setLoading(true);
     try {
       const response = await fetch('/api/auth/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(form) });
@@ -77,7 +79,7 @@ export default function SignupPage() {
       <div className="space-y-2"><Label htmlFor="new-password">비밀번호</Label><Input id="new-password" type="password" autoComplete="new-password" value={form.password} onChange={event => update('password', event.target.value)} required /><p className="text-xs text-muted-foreground">8~16자, 영문 대·소문자·숫자·특수문자 각각 1개 이상</p></div>
       <div className="space-y-2"><Label htmlFor="confirm-password">비밀번호 확인</Label><Input id="confirm-password" type="password" autoComplete="new-password" value={form.confirmPassword} onChange={event => update('confirmPassword', event.target.value)} required /></div>
       {submitMessage && <div role={submitMessage.type === 'error' ? 'alert' : 'status'} className={`flex items-start gap-2 rounded-xl px-4 py-3 text-sm font-semibold ${submitMessage.type === 'success' ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'}`}>{submitMessage.type === 'success' ? <CheckCircle2 className="mt-0.5 size-4 shrink-0" /> : <CircleAlert className="mt-0.5 size-4 shrink-0" />}<span>{submitMessage.text}</span></div>}
-      <Button type="submit" className="h-11 w-full rounded-xl" disabled={loading}>{loading && <LoaderCircle className="size-4 animate-spin" />}{loading ? '가입 중…' : '회원가입'}</Button>
+      <label className="flex items-start gap-2 rounded-xl bg-secondary p-3 text-xs leading-5 text-muted-foreground"><input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="mt-1" /><span><Link href="/terms" className="font-bold text-primary">서비스 이용 안내</Link>와 <Link href="/privacy" className="font-bold text-primary">개인정보 처리 안내</Link>를 확인했으며 이에 동의합니다. (필수)</span></label><Button type="submit" className="h-11 w-full rounded-xl" disabled={loading}>{loading && <LoaderCircle className="size-4 animate-spin" />}{loading ? '가입 중…' : '회원가입'}</Button>
     </form>
   </AuthShell>;
 }

@@ -217,7 +217,7 @@ export default function ProfileSetupPage() {
       </main>
     );
   return (
-    <main className="min-h-screen bg-[#f4f7f5] px-6 py-10">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#ffe6ba,transparent_34%),linear-gradient(180deg,#fffdf8,#fff5ea)] px-6 py-10">
       <div className="mx-auto max-w-5xl">
         <div
           className={`mb-6 flex items-center ${isInitialSetup ? 'justify-end' : 'justify-between'}`}
@@ -238,11 +238,11 @@ export default function ProfileSetupPage() {
             <strong>내집레이더</strong>
           </div>
         </div>
-        <section className="overflow-hidden rounded-[28px] border bg-white shadow-[0_18px_60px_rgba(17,63,55,.07)]">
-          <header className="border-b bg-[#123c36] p-7 text-white sm:p-9">
+        <section className="overflow-hidden rounded-[30px] border bg-white shadow-[0_24px_70px_rgba(157,76,47,.13)]">
+          <header className="border-b bg-[linear-gradient(120deg,#c94f3a,#e8734f_58%,#f3a452)] p-7 text-white sm:p-9">
             <div className="flex items-start justify-between gap-5">
               <div>
-                <p className="mb-2 text-xs font-bold text-[#9be5cb]">
+                <p className="mb-2 text-xs font-bold text-[#ffe39c]">
                   MY HOUSING PROFILE
                 </p>
                 <h1 className="text-3xl font-extrabold tracking-[-.045em]">
@@ -254,7 +254,7 @@ export default function ProfileSetupPage() {
                   있습니다.
                 </p>
               </div>
-              <ShieldCheck className="hidden size-10 text-[#9be5cb] sm:block" />
+              <ShieldCheck className="hidden size-10 text-[#ffe39c] sm:block" />
             </div>
             <div className="mt-5 inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-xs font-semibold text-white/85">
               <LockKeyhole className="size-3.5" /> 입력 정보는 로그인한 본인만
@@ -716,7 +716,7 @@ function FormSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border bg-[#fbfcfb] p-6">
+    <section className="rounded-2xl border bg-[#fffaf4] p-6">
       <div className="mb-6 flex items-start gap-4 border-b pb-5">
         <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary text-sm font-black text-white">
           {number}

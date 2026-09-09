@@ -9,6 +9,21 @@ export type DashboardProfile = {
   household_type: string | null;
   owns_car: boolean | null;
   car_value: number | null;
+  is_married?: boolean | null;
+  has_children?: boolean | null;
+  child_count?: number | null;
+  marriage_date?: string | null;
+  expected_marriage_date?: string | null;
+  spouse_has_income?: boolean | null;
+  youngest_child_birth_date?: string | null;
+  is_pregnant?: boolean | null;
+  graduation_date?: string | null;
+  receives_livelihood_benefit?: boolean | null;
+  receives_housing_benefit?: boolean | null;
+  is_near_poverty?: boolean | null;
+  is_supported_single_parent?: boolean | null;
+  subscription_payment_count?: number | null;
+  residence_start_date?: string | null;
   profile_completed_at: string | null;
 };
 
@@ -43,6 +58,14 @@ export type OfficialListingRow = {
   minimum_age?: number | null;
   source_url: string;
 };
+
+export const ACTIVE_LISTING_STATUSES = ['공고중', '정정공고중', '접수중'] as const;
+
+export function isActiveListingStatus(status: string) {
+  return ACTIVE_LISTING_STATUSES.includes(
+    status.trim() as (typeof ACTIVE_LISTING_STATUSES)[number],
+  );
+}
 
 export function mapOfficialListingRow(row: OfficialListingRow): OfficialListing {
   return {
@@ -241,6 +264,167 @@ export function profileCompletion(profile: DashboardProfile) {
     missing,
   };
 }
+
+export type EligibilityCheckStatus = '충족' | '미충족' | '확인 필요';
+
+export type EligibilityCheck = {
+  key: string;
+  label: string;
+  status: EligibilityCheckStatus;
+  detail: string;
+};
+
+export function getEligibilityChecks(
+  profile: DashboardProfile,
+  listing: OfficialListing,
+  rules: StoredEligibilityRule[] = [],
+): EligibilityCheck[] {
+  const age = calculateAge(profile.birth_date);
+  const yearsSince = (date: string | null | undefined) => {
+    if (!date) return null;
+    const parsed = new Date(`${date}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return (Date.now() - parsed.getTime()) / (365.2425 * 86_400_000);
+  };
+  const checks: EligibilityCheck[] = [
+    {
+      key: 'homeless',
+      label: '무주택',
+      status:
+        profile.is_homeless == null
+          ? '확인 필요'
+          : profile.is_homeless
+            ? '충족'
+            : '미충족',
+      detail:
+        profile.is_homeless == null
+          ? '무주택 여부를 입력해야 합니다.'
+          : profile.is_homeless
+            ? '저장된 정보상 무주택입니다.'
+            : '저장된 정보상 주택을 보유하고 있습니다.',
+    },
+    {
+      key: 'region',
+      label: '거주지역',
+      status:
+        profile.residence_region && profile.residence_region === listing.region
+          ? '충족'
+          : '확인 필요',
+      detail:
+        profile.residence_region && profile.residence_region === listing.region
+          ? `${listing.region} 거주 조건이 일치합니다.`
+          : '타 지역 신청 가능 여부와 지역 우선순위를 공고문에서 확인해야 합니다.',
+    },
+  ];
+
+  const effectiveRules = listing.minimumAge
+    ? [
+        ...rules,
+        {
+          rule_key: 'age_min',
+          operator: 'gte',
+          numeric_value: listing.minimumAge,
+          text_value: null,
+          description: `만 ${listing.minimumAge}세 이상`,
+        },
+      ]
+    : rules;
+
+  for (const rule of effectiveRules) {
+    let check: EligibilityCheck | null = null;
+    if (rule.confidence != null && rule.confidence < 0.8) {
+      checks.push({ key: `review-${rule.rule_key}-${rule.description}`, label: rule.description, status: '확인 필요', detail: '자동 추출 신뢰도가 낮아 공식 원문 또는 관리자 검수가 필요합니다.' });
+      continue;
+    }
+    if (rule.rule_key === 'age_min' && rule.numeric_value != null) {
+      check = {
+        key: `age-min-${rule.numeric_value}`,
+        label: '최소 연령',
+        status: age == null ? '확인 필요' : age >= rule.numeric_value ? '충족' : '미충족',
+        detail: age == null ? '생년월일 입력이 필요합니다.' : `${age}세 / 기준 ${rule.numeric_value}세 이상`,
+      };
+    } else if (rule.rule_key === 'age_max' && rule.numeric_value != null) {
+      check = {
+        key: `age-max-${rule.numeric_value}`,
+        label: '최대 연령',
+        status: age == null ? '확인 필요' : age <= rule.numeric_value ? '충족' : '미충족',
+        detail: age == null ? '생년월일 입력이 필요합니다.' : `${age}세 / 기준 ${rule.numeric_value}세 이하`,
+      };
+    } else if (rule.rule_key === 'total_assets_max' && rule.numeric_value != null) {
+      check = {
+        key: `assets-${rule.numeric_value}`,
+        label: '총자산',
+        status: profile.total_assets == null ? '확인 필요' : profile.total_assets <= rule.numeric_value ? '충족' : '미충족',
+        detail: profile.total_assets == null ? '총자산 입력이 필요합니다.' : `${profile.total_assets.toLocaleString()}만원 / 기준 ${rule.numeric_value.toLocaleString()}만원 이하`,
+      };
+    } else if (rule.rule_key === 'car_value_max' && rule.numeric_value != null) {
+      const carValue = profile.owns_car ? profile.car_value : 0;
+      check = {
+        key: `car-${rule.numeric_value}`,
+        label: '자동차 가액',
+        status: carValue == null ? '확인 필요' : carValue <= rule.numeric_value ? '충족' : '미충족',
+        detail: carValue == null ? '자동차 가액 입력이 필요합니다.' : `${carValue.toLocaleString()}만원 / 기준 ${rule.numeric_value.toLocaleString()}만원 이하`,
+      };
+    } else if (rule.rule_key === 'income_percent_max') {
+      check = {
+        key: `income-${rule.numeric_value ?? rule.text_value ?? 'rule'}`,
+        label: '소득',
+        status: '확인 필요',
+        detail: `${rule.description} — 가구원 수별 기준금액은 공식 공고문에서 확인해야 합니다.`,
+      };
+    } else if (rule.rule_key === 'monthly_income_max' && rule.numeric_value != null) {
+      const applies = !rule.text_value || Number(rule.text_value) === profile.household_size;
+      if (!applies) continue;
+      check = {
+        key: `monthly-income-${rule.text_value ?? 'all'}-${rule.numeric_value}`,
+        label: '월평균소득',
+        status: profile.monthly_income == null ? '확인 필요' : profile.monthly_income <= rule.numeric_value ? '충족' : '미충족',
+        detail: profile.monthly_income == null ? '월평균소득 입력이 필요합니다.' : `${profile.monthly_income.toLocaleString()}만원 / 기준 ${rule.numeric_value.toLocaleString()}만원 이하`,
+      };
+    } else if (rule.rule_key === 'marriage_years_max' && rule.numeric_value != null) {
+      const marriageYears = yearsSince(profile.marriage_date);
+      check = {
+        key: `marriage-${rule.numeric_value}`,
+        label: '혼인 기간',
+        status: marriageYears == null ? '확인 필요' : marriageYears <= rule.numeric_value ? '충족' : '미충족',
+        detail: marriageYears == null ? '혼인일 입력이 필요합니다.' : `혼인 약 ${Math.floor(marriageYears)}년 / 기준 ${rule.numeric_value}년 이내`,
+      };
+    } else if (rule.rule_key === 'subscription_payment_min' && rule.numeric_value != null) {
+      check = {
+        key: `subscription-${rule.numeric_value}`,
+        label: '청약 납입',
+        status: profile.subscription_payment_count == null ? '확인 필요' : profile.subscription_payment_count >= rule.numeric_value ? '충족' : '미충족',
+        detail: profile.subscription_payment_count == null ? '청약통장 납입 횟수 입력이 필요합니다.' : `${profile.subscription_payment_count}회 / 기준 ${rule.numeric_value}회 이상`,
+      };
+    } else if (rule.rule_key === 'residence_months_min' && rule.numeric_value != null) {
+      const residenceYears = yearsSince(profile.residence_start_date);
+      const residenceMonths = residenceYears == null ? null : Math.floor(residenceYears * 12);
+      check = {
+        key: `residence-months-${rule.numeric_value}`,
+        label: '거주 기간',
+        status: residenceMonths == null ? '확인 필요' : residenceMonths >= rule.numeric_value ? '충족' : '미충족',
+        detail: residenceMonths == null ? '현재 지역 전입일 입력이 필요합니다.' : `약 ${residenceMonths}개월 / 기준 ${rule.numeric_value}개월 이상`,
+      };
+    } else if (rule.rule_key === 'graduation_years_max' && rule.numeric_value != null) {
+      const graduationYears = yearsSince(profile.graduation_date);
+      check = {
+        key: `graduation-${rule.numeric_value}`,
+        label: '졸업 후 기간',
+        status: graduationYears == null ? '확인 필요' : graduationYears <= rule.numeric_value ? '충족' : '미충족',
+        detail: graduationYears == null ? '졸업일 입력이 필요합니다.' : `졸업 후 약 ${Math.floor(graduationYears)}년 / 기준 ${rule.numeric_value}년 이내`,
+      };
+    } else if (rule.rule_key === 'children_required') {
+      const hasChild = Boolean(profile.has_children || profile.is_pregnant);
+      check = { key: 'children-required', label: '자녀·태아', status: hasChild ? '충족' : '미충족', detail: hasChild ? '저장된 정보에 자녀 또는 태아가 있습니다.' : '자녀 또는 태아 요건에 해당하지 않습니다.' };
+    } else if (rule.rule_key === 'activity_status' && rule.text_value) {
+      const allowed = rule.text_value.split(',');
+      check = { key: `activity-${rule.text_value}`, label: '활동 상태', status: profile.activity_status == null ? '확인 필요' : allowed.includes(profile.activity_status) ? '충족' : '미충족', detail: rule.description };
+    }
+    if (check && !checks.some((item) => item.key === check?.key)) checks.push(check);
+  }
+  return checks;
+}
+
 export function assessListing(
   profile: DashboardProfile,
   listing: OfficialListing,
@@ -283,10 +467,19 @@ export function assessListingWithRules(
   const base = assessListing(profile, listing);
   if (base.status === '어려움' || rules.length === 0) return base;
   const age = calculateAge(profile.birth_date);
+  const yearsSince = (date: string | null | undefined) => {
+    if (!date) return null;
+    const parsed = new Date(`${date}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : (Date.now() - parsed.getTime()) / (365.2425 * 86_400_000);
+  };
   const unmet: string[] = [];
   const unknown: string[] = [];
   let checked = 0;
   for (const rule of rules) {
+    if (rule.confidence != null && rule.confidence < 0.8) {
+      unknown.push(rule.description);
+      continue;
+    }
     if (rule.rule_key === 'age_min' && rule.numeric_value != null)
       age == null ? unknown.push('나이') : age < rule.numeric_value ? unmet.push(rule.description) : checked++;
     else if (rule.rule_key === 'age_max' && rule.numeric_value != null)
@@ -298,6 +491,25 @@ export function assessListingWithRules(
     else if (rule.rule_key === 'homeless_required')
       profile.is_homeless == null ? unknown.push('무주택 여부') : !profile.is_homeless ? unmet.push(rule.description) : checked++;
     else if (rule.rule_key === 'income_percent_max') unknown.push('가구원별 소득 기준');
+    else if (rule.rule_key === 'monthly_income_max' && rule.numeric_value != null) {
+      if (rule.text_value && Number(rule.text_value) !== profile.household_size) continue;
+      profile.monthly_income == null ? unknown.push('월평균소득') : profile.monthly_income > rule.numeric_value ? unmet.push(rule.description) : checked++;
+    }
+    else if (rule.rule_key === 'marriage_years_max' && rule.numeric_value != null) {
+      const years = yearsSince(profile.marriage_date);
+      years == null ? unknown.push('혼인 기간') : years > rule.numeric_value ? unmet.push(rule.description) : checked++;
+    } else if (rule.rule_key === 'subscription_payment_min' && rule.numeric_value != null)
+      profile.subscription_payment_count == null ? unknown.push('청약 납입 횟수') : profile.subscription_payment_count < rule.numeric_value ? unmet.push(rule.description) : checked++;
+    else if (rule.rule_key === 'residence_months_min' && rule.numeric_value != null) {
+      const years = yearsSince(profile.residence_start_date);
+      years == null ? unknown.push('거주 기간') : years * 12 < rule.numeric_value ? unmet.push(rule.description) : checked++;
+    } else if (rule.rule_key === 'graduation_years_max' && rule.numeric_value != null) {
+      const years = yearsSince(profile.graduation_date);
+      years == null ? unknown.push('졸업 후 기간') : years > rule.numeric_value ? unmet.push(rule.description) : checked++;
+    } else if (rule.rule_key === 'children_required')
+      profile.has_children || profile.is_pregnant ? checked++ : unmet.push(rule.description);
+    else if (rule.rule_key === 'activity_status' && rule.text_value)
+      profile.activity_status == null ? unknown.push('활동 상태') : rule.text_value.split(',').includes(profile.activity_status) ? checked++ : unmet.push(rule.description);
   }
   if (unmet.length)
     return { status: '어려움', tone: 'danger', reason: `공고문 조건 불충족: ${unmet.join(', ')}` } as const;

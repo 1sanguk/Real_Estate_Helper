@@ -24,10 +24,11 @@ jobs:
       - name: Collect official notices and recalculate matches
         run: npm run sync:listings
         env:
-          LH_SUPPLY_SERVICE_KEY: ${{ secrets.LH_SUPPLY_SERVICE_KEY }}
+          PUBLIC_SERVICE_KEY: ${{ secrets.PUBLIC_SERVICE_KEY }}
           LH_ANNOUNCEMENT_API_URL: ${{ secrets.LH_ANNOUNCEMENT_API_URL }}
           LH_SUPPLY_API_URL: ${{ secrets.LH_SUPPLY_API_URL }}
           LH_SUPPLY_DETAIL_API_URL: ${{ secrets.LH_SUPPLY_DETAIL_API_URL }}
+          HUG_LISTINGS_API_URL: ${{ secrets.HUG_LISTINGS_API_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       - name: Install PDF text extractor
