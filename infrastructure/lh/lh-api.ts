@@ -10,7 +10,9 @@ export const DEFAULT_LH_DETAIL_URL =
 const PAGE_SIZE = 100;
 const MAX_PAGES = 100;
 const SUPPLY_REQUEST_INTERVAL_MS = 250;
-const MAX_RETRY_COUNT = 3;
+const MAX_RETRY_COUNT = 4;
+const REQUEST_TIMEOUT_MS = 30_000;
+const RETRY_BASE_DELAY_MS = 1_000;
 const ROW_ID_KEYS = ['PAN_ID', 'panId', 'pan_id'];
 
 function resolveOperationUrl(baseUrl: string, operation: string): string {
@@ -96,6 +98,8 @@ export type LhApiClientOptions = {
   supplyUrl?: string;
   detailUrl?: string;
   fetchImplementation?: typeof fetch;
+  requestTimeoutMs?: number;
+  retryBaseDelayMs?: number;
 };
 
 export class LhApiClient {
@@ -104,6 +108,8 @@ export class LhApiClient {
   readonly #supplyUrl: string;
   readonly #detailUrl: string;
   readonly #fetch: typeof fetch;
+  readonly #requestTimeoutMs: number;
+  readonly #retryBaseDelayMs: number;
 
   constructor(options: LhApiClientOptions) {
     this.#serviceKey = normalizeServiceKey(options.serviceKey);
@@ -120,6 +126,8 @@ export class LhApiClient {
       'getLeaseNoticeDtlInfo1',
     );
     this.#fetch = options.fetchImplementation ?? fetch;
+    this.#requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+    this.#retryBaseDelayMs = options.retryBaseDelayMs ?? RETRY_BASE_DELAY_MS;
   }
 
   async fetchAnnouncements(): Promise<LhApiRow[]> {
@@ -189,10 +197,23 @@ export class LhApiClient {
     url.searchParams.set('_type', 'json');
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     for (let attempt = 0; attempt <= MAX_RETRY_COUNT; attempt++) {
-      const response = await this.#fetch(url, { headers: { accept: 'application/json' } });
+      let response: Response;
+      try {
+        response = await this.#fetch(url, {
+          headers: { accept: 'application/json' },
+          signal: AbortSignal.timeout(this.#requestTimeoutMs),
+        });
+      } catch (error) {
+        if (attempt < MAX_RETRY_COUNT) {
+          await wait(this.#retryBaseDelayMs * 2 ** attempt);
+          continue;
+        }
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(`LH API 연결 실패: ${reason}. ${MAX_RETRY_COUNT + 1}회 시도했지만 공공데이터포털에 연결하지 못했습니다.`);
+      }
       const body = await response.text();
       if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRY_COUNT) {
-        await wait(500 * 2 ** attempt);
+        await wait(this.#retryBaseDelayMs * 2 ** attempt);
         continue;
       }
       if (!response.ok) {

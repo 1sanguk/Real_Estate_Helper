@@ -95,3 +95,19 @@ void test('URL Encoding 인증키도 한 번만 인코딩해 전송한다', asyn
   assert.match(requestedUrl, /serviceKey=abc%2Bdef%2Fghi%3D/);
   assert.doesNotMatch(requestedUrl, /%252B/);
 });
+
+void test('일시적인 네트워크 실패 후 LH API 호출을 다시 시도한다', async () => {
+  let attempts = 0;
+  const client = new LhApiClient({
+    serviceKey: 'test-key',
+    announcementUrl: 'https://example.test/notices',
+    retryBaseDelayMs: 1,
+    fetchImplementation: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new TypeError('fetch failed');
+      return new Response(JSON.stringify([{ dsList: [] }]), { status: 200 });
+    },
+  });
+  await client.fetchAnnouncements();
+  assert.equal(attempts, 2);
+});
