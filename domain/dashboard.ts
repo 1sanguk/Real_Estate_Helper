@@ -14,7 +14,7 @@ export type DashboardProfile = {
 
 export type OfficialListing = {
   id: string;
-  agency: 'LH';
+  agency: 'LH' | 'SH' | 'HUG';
   title: string;
   program: string;
   region: string;
@@ -27,6 +27,40 @@ export type OfficialListing = {
   minimumAge?: number;
   sourceUrl: string;
 };
+
+export type OfficialListingRow = {
+  source_listing_id: string;
+  agency: 'LH' | 'SH' | 'HUG';
+  title: string;
+  program: string;
+  region: string;
+  address?: string | null;
+  area?: string | null;
+  units?: string | null;
+  published_at?: string | null;
+  application_period?: string | null;
+  status: string;
+  minimum_age?: number | null;
+  source_url: string;
+};
+
+export function mapOfficialListingRow(row: OfficialListingRow): OfficialListing {
+  return {
+    id: row.source_listing_id,
+    agency: row.agency,
+    title: row.title,
+    program: row.program,
+    region: row.region,
+    address: row.address ?? undefined,
+    area: row.area ?? undefined,
+    units: row.units ?? undefined,
+    publishedAt: row.published_at ?? '',
+    applicationPeriod: row.application_period ?? undefined,
+    status: row.status,
+    minimumAge: row.minimum_age ?? undefined,
+    sourceUrl: row.source_url,
+  };
+}
 
 export type LhApiRow = Record<string, unknown>;
 
@@ -47,8 +81,9 @@ export function mapLhApiListing(row: LhApiRow, supplies: LhApiRow[] = []): Offic
   const id = textValue(row, 'PAN_ID', 'panId', 'pan_id');
   const title = textValue(row, 'PAN_NM', 'panNm', 'pan_nm');
   if (!id || !title) return null;
-  const areas = supplies.map(item => Number(textValue(item, 'DDO_AR', 'ddoAr', 'SIL_SQMT'))).filter(Number.isFinite);
-  const units = supplies.reduce((sum,item)=>sum+Number(textValue(item,'HSH_CNT','hshCnt','SPL_HSH_CNT')||0),0);
+  const areas = supplies.map(item => Number(textValue(item, 'DDO_AR', 'ddoAr', 'SIL_SQMT'))).filter(value => Number.isFinite(value) && value > 0);
+  const countedUnits = supplies.reduce((sum,item)=>sum+Number(textValue(item,'HSH_CNT','hshCnt','SPL_HSH_CNT')||0),0);
+  const units = countedUnits || supplies.filter(item => textValue(item, 'HO_NO', 'hoNo')).length;
   const detailUrl = textValue(row, 'DTL_URL', 'dtlUrl', 'URL');
   return {
     id,
@@ -56,7 +91,7 @@ export function mapLhApiListing(row: LhApiRow, supplies: LhApiRow[] = []): Offic
     title,
     program: textValue(row, 'AIS_TP_CD_NM', 'UPP_AIS_TP_NM', 'aisTpCdNm') || '분양·임대',
     region: textValue(row, 'CNP_CD_NM', 'ARA_HDQ_NM', 'cnpCdNm') || '지역 미확인',
-    address: textValue(supplies[0] ?? {}, 'LCC_NT_NM', 'lccNtNm', 'LGDNG_ADDR'),
+    address: textValue(supplies[0] ?? {}, 'LCC_NT_NM', 'lccNtNm', 'LGDNG_ADDR', 'ADR'),
     area: areas.length ? `전용 ${Math.min(...areas)}~${Math.max(...areas)}㎡` : undefined,
     units: units > 0 ? `공급 ${units.toLocaleString()}명` : undefined,
     publishedAt: displayDate(textValue(row, 'PAN_NT_ST_DT', 'panNtStDt', 'PAN_DT')),
@@ -187,7 +222,7 @@ export function calculateAge(
 }
 export function profileCompletion(profile: DashboardProfile) {
   const missing = completionFields
-    .filter(([key]) => profile[key] === null || profile[key] === '')
+    .filter(([key]) => profile[key] == null || profile[key] === '')
     .map(([, label]) => label);
   return {
     percent: Math.round(
@@ -202,6 +237,8 @@ export function assessListing(
   listing: OfficialListing,
 ) {
   const age = calculateAge(profile.birth_date);
+  if (profile.is_homeless == null)
+    return { status: '추가 확인', tone: 'warning', reason: '무주택 여부가 입력되지 않았습니다. 내 조건에서 확인해 주세요.' } as const;
   if (profile.is_homeless === false)
     return {
       status: '어려움',

@@ -20,9 +20,9 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
   calculateAge,
-  officialListings,
   profileCompletion,
   assessListing,
+  mapOfficialListingRow,
   type DashboardProfile,
   type OfficialListing,
 } from '@/domain/dashboard';
@@ -42,14 +42,20 @@ const officialSources = [
   },
 ];
 
-export default function HomePage() {
+export default function HomePage() { return <Dashboard />; }
+
+export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
   const router = useRouter();
   const { loading, user, signOut } = useAuth();
   const [profile, setProfile] = useState<DashboardProfile | null>(null);
-  const [listings, setListings] = useState<OfficialListing[]>(officialListings);
-  const [storedMatches, setStoredMatches] = useState<
-    Record<string, { status: string; tone: 'success' | 'warning' | 'danger'; reason: string }>
-  >({});
+  const [listings, setListings] = useState<OfficialListing[]>([]);
+  const [query, setQuery] = useState('');
+  const [region, setRegion] = useState('');
+  const [possibleOnly, setPossibleOnly] = useState(false);
+  const [listingError, setListingError] = useState('');
+  const [listingsLoading, setListingsLoading] = useState(true);
+  const [actionMessage, setActionMessage] = useState('');
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const [profileError, setProfileError] = useState('');
   const { savedListingIds, toggleSavedListing } = useUserPreferences(user?.id);
 
@@ -81,33 +87,11 @@ export default function HomePage() {
         }
         setProfile(data as DashboardProfile);
       });
-    void Promise.all([
-      client.from('official_listings').select('*').order('published_at', { ascending: false }),
-      client.from('user_listing_matches').select('source_listing_id,match_status,reason').eq('user_id', user.id),
-    ]).then(([listingResult, matchResult]) => {
-      if (!listingResult.error && listingResult.data?.length) {
-        setListings(listingResult.data.map((row) => ({
-          id: row.source_listing_id,
-          agency: row.agency,
-          title: row.title,
-          program: row.program,
-          region: row.region,
-          address: row.address ?? undefined,
-          area: row.area ?? undefined,
-          units: row.units ?? undefined,
-          publishedAt: row.published_at ?? '',
-          applicationPeriod: row.application_period ?? undefined,
-          status: row.status,
-          minimumAge: row.minimum_age ?? undefined,
-          sourceUrl: row.source_url,
-        })));
-      }
-      if (!matchResult.error && matchResult.data) {
-        setStoredMatches(Object.fromEntries(matchResult.data.map((row) => [row.source_listing_id, {
-          status: row.match_status,
-          tone: row.match_status === '가능성 있음' ? 'success' : row.match_status === '어려움' ? 'danger' : 'warning',
-          reason: row.reason,
-        }])));
+    void client.from('official_listings').select('*').order('published_at', { ascending: false }).then((listingResult) => {
+      setListingsLoading(false);
+      if (listingResult.error) setListingError('공고를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      if (!listingResult.error && listingResult.data) {
+        setListings(listingResult.data.map(mapOfficialListingRow));
       }
     });
   }, [user, router]);
@@ -121,14 +105,30 @@ export default function HomePage() {
       profile
         ? listings.map((listing) => ({
             listing,
-            assessment: storedMatches[listing.id] ?? assessListing(profile, listing),
+            assessment: assessListing(profile, listing),
           }))
         : [],
-    [profile, listings, storedMatches],
+    [profile, listings],
   );
   const possibleCount = assessed.filter(
     (item) => item.assessment.status === '가능성 있음',
   ).length;
+  const visible = assessed.filter(({listing, assessment}) =>
+    (!savedOnly || savedListingIds.includes(listing.id)) &&
+    (!region || listing.region === region) &&
+    (!possibleOnly || assessment.status === '가능성 있음') &&
+    `${listing.title} ${listing.region} ${listing.address ?? ''} ${listing.program}`.toLowerCase().includes(query.trim().toLowerCase())
+  );
+  async function saveListing(id: string) {
+    if (pendingId) return;
+    setPendingId(id);
+    try {
+      const saved = savedListingIds.includes(id);
+      if (!await toggleSavedListing(id)) throw new Error();
+      setActionMessage(saved ? '관심 공고에서 해제했습니다.' : '관심 공고에 저장했습니다.');
+    } catch { setActionMessage('관심 공고 저장에 실패했습니다. 다시 시도해 주세요.'); }
+    finally { setPendingId(null); }
+  }
 
   if (loading || !user || (!profile && !profileError))
     return (
@@ -150,11 +150,12 @@ export default function HomePage() {
           </Link>
           <nav className="flex items-center gap-7 text-sm font-bold">
             <a href="#listings">실제 공고</a>
+            <Link href="/saved">관심 공고</Link>
             <Link href="/profile/setup">내 조건 수정</Link>
             <Button
               type="button"
               variant="outline"
-              onClick={() => void signOut()}
+              onClick={() => void signOut().catch(() => setActionMessage('로그아웃하지 못했습니다. 다시 시도해 주세요.'))}
             >
               <LogOut className="size-4" />
               로그아웃
@@ -177,7 +178,7 @@ export default function HomePage() {
             className="hero-panel relative flex min-h-72 flex-col justify-center overflow-hidden rounded-[28px] p-9 text-white"
           >
             <span className="mb-4 w-fit rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold">
-              공식 출처 확인 · 2026.09.07
+              수집된 공식 공고 기준
             </span>
             <h1 className="max-w-3xl text-4xl font-black leading-tight tracking-[-.045em]">
               현재 확인된 실제 임대 공고{' '}
@@ -258,7 +259,7 @@ export default function HomePage() {
             <div>
               <p className="section-kicker">VERIFIED OFFICIAL LISTINGS</p>
               <h2 className="text-2xl font-black tracking-[-.04em]">
-                내 조건으로 확인한 실제 공고
+                {savedOnly ? '내 관심 공고' : '내 조건으로 확인한 실제 공고'}
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
                 합성 데이터는 모두 제거했습니다. 자격은 공식 원문 확인 전까지
@@ -266,11 +267,20 @@ export default function HomePage() {
               </p>
             </div>
             <strong className="text-sm text-primary">
-              총 {assessed.length}건
+              검색 결과 {visible.length}건
             </strong>
           </div>
+          <div className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-white p-4">
+            <label className="flex flex-col gap-1 text-sm">공고 검색<input className="rounded border p-2" placeholder="공고명, 지역, 주소, 사업 유형" value={query} onChange={event => setQuery(event.target.value)} /></label>
+            <label className="flex flex-col gap-1 text-sm">지역<select className="rounded border p-2" value={region} onChange={event => setRegion(event.target.value)}><option value="">전체 지역</option>{[...new Set(listings.map(item => item.region))].sort().map(value => <option key={value}>{value}</option>)}</select></label>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={possibleOnly} onChange={event => setPossibleOnly(event.target.checked)} />가능성 있는 공고만</label>
+            <Button variant="outline" onClick={() => { setQuery(''); setRegion(''); setPossibleOnly(false); }}>검색 초기화</Button>
+          </div>
+          {actionMessage && <p role="status" className="mb-4 rounded border p-3">{actionMessage}</p>}
+          {listingError && <p role="alert" className="mb-4 text-destructive">{listingError} <button onClick={() => window.location.reload()}>다시 시도</button></p>}
+          {listingsLoading ? <p className="p-6">공고를 불러오고 있습니다…</p> : !listingError && visible.length === 0 && <p className="rounded-xl border p-6">{listings.length === 0 ? '아직 수집된 공고가 없습니다. 공식 공고가 수집되면 여기에 표시됩니다.' : savedOnly ? '조건에 맞는 관심 공고가 없습니다. 홈에서 공고를 저장하거나 검색 조건을 변경해 주세요.' : '검색 조건에 맞는 공고가 없습니다. 검색 조건을 변경해 주세요.'}</p>}
           <div className="space-y-3">
-            {assessed.map(({ listing, assessment }) => (
+            {visible.map(({ listing, assessment }) => (
               <article
                 key={listing.id}
                 className="rounded-2xl border bg-white p-6"
@@ -286,7 +296,11 @@ export default function HomePage() {
                         {listing.publishedAt}
                       </span>
                     </div>
-                    <h3 className="text-lg font-extrabold">{listing.title}</h3>
+                    <h3 className="text-lg font-extrabold">
+                      <Link href={`/listings/${encodeURIComponent(listing.id)}`} className="hover:underline">
+                        {listing.title}
+                      </Link>
+                    </h3>
                     <p className="mt-2 text-sm text-muted-foreground">
                       {listing.region}
                       {listing.address ? ` · ${listing.address}` : ''}
@@ -313,7 +327,8 @@ export default function HomePage() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => void toggleSavedListing(listing.id)}
+                        disabled={pendingId !== null}
+                        onClick={() => void saveListing(listing.id)}
                       >
                         <Heart
                           className="size-4"
@@ -327,6 +342,12 @@ export default function HomePage() {
                           ? '저장됨'
                           : '관심 저장'}
                       </Button>
+                      <Link
+                        href={`/listings/${encodeURIComponent(listing.id)}`}
+                        className="inline-flex h-7 items-center gap-1 rounded-lg border px-2.5 text-xs font-bold"
+                      >
+                        상세·서류 보기
+                      </Link>
                       <a
                         href={listing.sourceUrl}
                         target="_blank"

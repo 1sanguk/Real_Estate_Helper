@@ -17,7 +17,7 @@
 
 ## GitHub Actions Secrets
 
-- `DATA_GO_KR_SERVICE_KEY`: 공공데이터포털 일반 인증키
+- `LH_SUPPLY_SERVICE_KEY`: 두 LH API에 공통으로 사용하는 공공데이터포털 일반 인증키
 - `LH_ANNOUNCEMENT_API_URL`: 활용신청 상세 화면의 공고문 요청 주소
 - `LH_SUPPLY_API_URL`: 활용신청 상세 화면의 공급정보 요청 주소
 - `NEXT_PUBLIC_SUPABASE_URL`: Supabase 프로젝트 URL

@@ -25,6 +25,11 @@ function toDatabaseRow(listing: OfficialListing, rawData: LhApiRow) {
   };
 }
 
+function isActiveAnnouncement(row: LhApiRow): boolean {
+  const status = String(row.PAN_SS ?? row.PAN_SS_NM ?? row.panSs ?? '');
+  return ['공고중', '정정공고중', '접수중'].includes(status);
+}
+
 async function main() {
   const supabase = createClient(required('NEXT_PUBLIC_SUPABASE_URL'), required('SUPABASE_SERVICE_ROLE_KEY'), {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -33,12 +38,12 @@ async function main() {
   if (runError) throw runError;
   try {
     const lhClient = new LhApiClient({
-      serviceKey: required('DATA_GO_KR_SERVICE_KEY'),
+      serviceKey: required('LH_SUPPLY_SERVICE_KEY'),
       announcementUrl: process.env.LH_ANNOUNCEMENT_API_URL,
       supplyUrl: process.env.LH_SUPPLY_API_URL,
     });
     const announcementRows = await lhClient.fetchAnnouncements();
-    const supplyRows = await lhClient.fetchSupplies(announcementRows);
+    const supplyRows = await lhClient.fetchSupplies(announcementRows.filter(isActiveAnnouncement));
     const listings = mapLhApiResponse(announcementRows, supplyRows);
     if (!listings.length) throw new Error('공식 API에서 유효한 공고를 찾지 못해 기존 데이터를 보존했습니다.');
     const rawById = new Map(announcementRows.map((row) => [getListingId(row), row]));

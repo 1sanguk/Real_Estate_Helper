@@ -24,7 +24,7 @@ jobs:
       - name: Collect official notices and recalculate matches
         run: npm run sync:listings
         env:
-          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          LH_SUPPLY_SERVICE_KEY: ${{ secrets.LH_SUPPLY_SERVICE_KEY }}
           LH_ANNOUNCEMENT_API_URL: ${{ secrets.LH_ANNOUNCEMENT_API_URL }}
           LH_SUPPLY_API_URL: ${{ secrets.LH_SUPPLY_API_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
