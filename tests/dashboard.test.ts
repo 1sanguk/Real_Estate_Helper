@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assessListing, calculateAge, mapLhApiResponse, mapOfficialListingRow, profileCompletion, type DashboardProfile } from '../domain/dashboard.ts';
+import { assessListing, assessListingWithRules, calculateAge, mapLhApiResponse, mapOfficialListingRow, profileCompletion, type DashboardProfile } from '../domain/dashboard.ts';
 
 const completeProfile: DashboardProfile = { birth_date:'1990-09-08', residence_region:'경기도', household_size:1, monthly_income:180, total_assets:2500, is_homeless:true, activity_status:'employed', household_type:'single', owns_car:false, car_value:null, profile_completed_at:'2026-09-08T00:00:00Z' };
 
@@ -12,6 +12,12 @@ void test('무주택 정보가 없으면 같은 지역이어도 가능성 있음
 void test('면적이 없는 공급정보를 0제곱미터로 표시하지 않는다', () => {
   const listing = mapLhApiResponse([{ PAN_ID: 'area', PAN_NM: '공고' }], [{ PAN_ID: 'area', HSH_CNT: '3' }])[0];
   assert.equal(listing.area, undefined);
+});
+
+void test('공고문 자산 기준을 초과하면 지원 어려움으로 판정한다', () => {
+  const listing = mapLhApiResponse([{ PAN_ID: 'rule', PAN_NM: '공고', CNP_CD_NM: '경기도' }], [])[0];
+  const result = assessListingWithRules(completeProfile, listing, [{ rule_key: 'total_assets_max', operator: 'lte', numeric_value: 2000, text_value: null, description: '총자산 2,000만원 이하' }]);
+  assert.equal(result.status, '어려움');
 });
 
 test('LH 목록과 공급 모의 응답을 화면 공고 형식으로 결합한다',()=>{

@@ -22,9 +22,11 @@ import {
   calculateAge,
   profileCompletion,
   assessListing,
+  assessListingWithRules,
   mapOfficialListingRow,
   type DashboardProfile,
   type OfficialListing,
+  type StoredEligibilityRule,
 } from '@/domain/dashboard';
 import { useAuth } from '@/features/auth/auth-context';
 import { useUserPreferences } from '@/features/user-data/use-user-preferences';
@@ -54,6 +56,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
   const [possibleOnly, setPossibleOnly] = useState(false);
   const [listingError, setListingError] = useState('');
   const [listingsLoading, setListingsLoading] = useState(true);
+  const [rulesByListing, setRulesByListing] = useState<Record<string, StoredEligibilityRule[]>>({});
   const [actionMessage, setActionMessage] = useState('');
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [profileError, setProfileError] = useState('');
@@ -94,6 +97,12 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
         setListings(listingResult.data.map(mapOfficialListingRow));
       }
     });
+    void client.from('listing_eligibility_rules').select('source_listing_id,rule_key,operator,numeric_value,text_value,description').then(({ data, error }) => {
+      if (error || !data) return;
+      const grouped: Record<string, StoredEligibilityRule[]> = {};
+      for (const row of data) (grouped[row.source_listing_id] ??= []).push(row);
+      setRulesByListing(grouped);
+    });
   }, [user, router]);
 
   const age = calculateAge(profile?.birth_date ?? null);
@@ -105,10 +114,12 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
       profile
         ? listings.map((listing) => ({
             listing,
-            assessment: assessListing(profile, listing),
+            assessment: rulesByListing[listing.id]?.length
+              ? assessListingWithRules(profile, listing, rulesByListing[listing.id])
+              : assessListing(profile, listing),
           }))
         : [],
-    [profile, listings],
+    [profile, listings, rulesByListing],
   );
   const possibleCount = assessed.filter(
     (item) => item.assessment.status === '가능성 있음',

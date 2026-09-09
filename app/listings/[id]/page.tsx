@@ -16,9 +16,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 import {
   assessListing,
+  assessListingWithRules,
   mapOfficialListingRow,
   type DashboardProfile,
   type OfficialListing,
+  type StoredEligibilityRule,
 } from '@/domain/dashboard';
 import { commonRequiredDocuments } from '@/domain/documents';
 import { useAuth } from '@/features/auth/auth-context';
@@ -34,6 +36,8 @@ export default function ListingDetailPage() {
   const [listing, setListing] = useState<OfficialListing | null>(null);
   const [detail, setDetail] = useState<{ application_schedules: Record<string, unknown>[]; complexes: Record<string, unknown>[] } | null>(null);
   const [attachments, setAttachments] = useState<Array<{ id: number; name: string; document_type: string; source_url: string }>>([]);
+  const [rules, setRules] = useState<StoredEligibilityRule[]>([]);
+  const [requiredDocuments, setRequiredDocuments] = useState<Array<{ id: number; document_name: string; requirement_type: string; issuer: string | null; evidence_text: string }>>([]);
   const [notFound, setNotFound] = useState(false);
   const [listingError, setListingError] = useState('');
   const [pageLoading, setPageLoading] = useState(true);
@@ -89,9 +93,13 @@ export default function ListingDetailPage() {
     void Promise.all([
       client.from('listing_details').select('application_schedules,complexes').eq('source_listing_id', id).maybeSingle(),
       client.from('listing_attachments').select('id,name,document_type,source_url').eq('source_listing_id', id).order('id'),
-    ]).then(([detailResult, attachmentResult]) => {
+      client.from('listing_eligibility_rules').select('rule_key,operator,numeric_value,text_value,description,evidence_text,confidence').eq('source_listing_id', id).order('id'),
+      client.from('listing_required_documents').select('id,document_name,requirement_type,issuer,evidence_text').eq('source_listing_id', id).order('requirement_type').order('id'),
+    ]).then(([detailResult, attachmentResult, ruleResult, documentResult]) => {
       if (!detailResult.error && detailResult.data) setDetail(detailResult.data);
       if (!attachmentResult.error && attachmentResult.data) setAttachments(attachmentResult.data);
+      if (!ruleResult.error && ruleResult.data) setRules(ruleResult.data);
+      if (!documentResult.error && documentResult.data) setRequiredDocuments(documentResult.data);
     });
   }, [user, id]);
 
@@ -130,12 +138,17 @@ export default function ListingDetailPage() {
       </main>
     );
 
-  const assessment = profile && listing ? assessListing(profile, listing) : null;
-  const readyCount = commonRequiredDocuments.filter((doc) =>
+  const assessment = profile && listing
+    ? rules.length ? assessListingWithRules(profile, listing, rules) : assessListing(profile, listing)
+    : null;
+  const displayedDocuments = requiredDocuments.length
+    ? requiredDocuments.map((document) => ({ id: document.id, label: document.document_name, issuer: document.issuer ?? '공고문 확인', requirementType: document.requirement_type, evidence: document.evidence_text }))
+    : commonRequiredDocuments.map((document) => ({ ...document, requirementType: '공통 안내', evidence: '' }));
+  const readyCount = displayedDocuments.filter((doc) =>
     checkedDocumentIds.includes(doc.id),
   ).length;
   const docProgress = Math.round(
-    (readyCount / commonRequiredDocuments.length) * 100,
+    displayedDocuments.length ? (readyCount / displayedDocuments.length) * 100 : 0,
   );
 
   return (
@@ -224,6 +237,20 @@ export default function ListingDetailPage() {
               </section>
             )}
 
+            {rules.length > 0 && (
+              <section className="rounded-2xl border bg-white p-6">
+                <h2 className="font-extrabold">공고문에서 확인한 자격 조건</h2>
+                <div className="mt-4 space-y-2">
+                  {rules.map((rule, index) => (
+                    <details key={`${rule.rule_key}-${index}`} className="rounded-xl border p-3 text-sm">
+                      <summary className="cursor-pointer font-bold">{rule.description}</summary>
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">근거: {rule.evidence_text}</p>
+                    </details>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {(detail?.complexes.length || detail?.application_schedules.length) && (
               <section className="rounded-2xl border bg-white p-6">
                 <h2 className="font-extrabold">공급 및 신청 일정</h2>
@@ -262,23 +289,21 @@ export default function ListingDetailPage() {
             <section className="rounded-2xl border bg-white p-6">
               <div className="mb-3 flex items-center gap-2">
                 <FileCheck2 className="size-5 text-primary" />
-                <h2 className="font-extrabold">제출 준비 서류(공통 안내)</h2>
+                <h2 className="font-extrabold">{requiredDocuments.length ? '이 공고의 제출 준비 서류' : '제출 준비 서류(공통 안내)'}</h2>
               </div>
               <p className="mb-4 flex items-start gap-2 rounded-xl bg-[#fff8e6] p-3 text-xs leading-5 text-[#725a16]">
                 <CircleAlert className="mt-0.5 size-4 shrink-0" />
-                아래 서류는 공공주택 신청에 공통적으로 요구되는 서류 예시입니다. 이 공고의 확정
-                필수 서류는 아니며, 실제 필요 서류와 제출 형식은 공식 원문에서 반드시 확인해야
-                합니다.
+                {requiredDocuments.length ? '공고문에서 자동 추출한 서류입니다. 조건부 여부와 제출 형식은 근거를 펼쳐 확인하고 공식 원문과 대조해 주세요.' : '아래 서류는 공공주택 신청에 공통적으로 요구되는 예시입니다. 실제 필요 서류와 제출 형식은 공식 원문에서 확인해야 합니다.'}
               </p>
               <div className="mb-3 flex justify-between text-sm font-bold">
                 <span>준비 현황</span>
                 <span className="text-primary">
-                  {readyCount} / {commonRequiredDocuments.length}
+                  {readyCount} / {displayedDocuments.length}
                 </span>
               </div>
               <Progress value={docProgress} className="mb-4" />
               <div className="space-y-1">
-                {commonRequiredDocuments.map((doc) => (
+                {displayedDocuments.map((doc) => (
                   <label
                     key={doc.id}
                     htmlFor={`doc-${doc.id}`}
@@ -298,6 +323,8 @@ export default function ListingDetailPage() {
                         {doc.label}
                       </span>
                       <span className="block text-[11px] text-muted-foreground">발급: {doc.issuer}</span>
+                      <span className="block text-[11px] font-bold text-primary">{doc.requirementType}</span>
+                      {doc.evidence && <details className="mt-1 text-[11px] text-muted-foreground"><summary>공고문 근거 보기</summary><p className="mt-1 leading-5">{doc.evidence}</p></details>}
                     </span>
                   </label>
                 ))}

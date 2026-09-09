@@ -63,6 +63,15 @@ export function mapOfficialListingRow(row: OfficialListingRow): OfficialListing 
 }
 
 export type LhApiRow = Record<string, unknown>;
+export type StoredEligibilityRule = {
+  rule_key: string;
+  operator: string;
+  numeric_value: number | null;
+  text_value: string | null;
+  description: string;
+  evidence_text?: string;
+  confidence?: number;
+};
 
 function textValue(row: LhApiRow, ...keys: string[]): string {
   for (const key of keys) {
@@ -264,4 +273,37 @@ export function assessListing(
     reason:
       '타 지역 신청·순위 조건과 소득·자산 기준을 공고문에서 확인해야 합니다.',
   } as const;
+}
+
+export function assessListingWithRules(
+  profile: DashboardProfile,
+  listing: OfficialListing,
+  rules: StoredEligibilityRule[],
+) {
+  const base = assessListing(profile, listing);
+  if (base.status === '어려움' || rules.length === 0) return base;
+  const age = calculateAge(profile.birth_date);
+  const unmet: string[] = [];
+  const unknown: string[] = [];
+  let checked = 0;
+  for (const rule of rules) {
+    if (rule.rule_key === 'age_min' && rule.numeric_value != null)
+      age == null ? unknown.push('나이') : age < rule.numeric_value ? unmet.push(rule.description) : checked++;
+    else if (rule.rule_key === 'age_max' && rule.numeric_value != null)
+      age == null ? unknown.push('나이') : age > rule.numeric_value ? unmet.push(rule.description) : checked++;
+    else if (rule.rule_key === 'total_assets_max' && rule.numeric_value != null)
+      profile.total_assets == null ? unknown.push('총자산') : profile.total_assets > rule.numeric_value ? unmet.push(rule.description) : checked++;
+    else if (rule.rule_key === 'car_value_max' && rule.numeric_value != null && profile.owns_car)
+      profile.car_value == null ? unknown.push('자동차 가액') : profile.car_value > rule.numeric_value ? unmet.push(rule.description) : checked++;
+    else if (rule.rule_key === 'homeless_required')
+      profile.is_homeless == null ? unknown.push('무주택 여부') : !profile.is_homeless ? unmet.push(rule.description) : checked++;
+    else if (rule.rule_key === 'income_percent_max') unknown.push('가구원별 소득 기준');
+  }
+  if (unmet.length)
+    return { status: '어려움', tone: 'danger', reason: `공고문 조건 불충족: ${unmet.join(', ')}` } as const;
+  if (unknown.length)
+    return { status: '추가 확인', tone: 'warning', reason: `${checked}개 조건 충족. 추가 확인: ${[...new Set(unknown)].join(', ')}` } as const;
+  if (base.status === '가능성 있음' && checked)
+    return { status: '가능성 있음', tone: 'success', reason: `공고문에서 추출한 ${checked}개 조건과 거주 지역·무주택 조건이 일치합니다.` } as const;
+  return base;
 }
