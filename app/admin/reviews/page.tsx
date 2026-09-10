@@ -50,14 +50,16 @@ export default function ListingReviewsPage() {
 
   async function saveReview(sourceListingId: string, reviewStatus: string) {
     const client = getSupabaseClient();
-    if (!client) return;
-    const { data } = await client.auth.getSession();
-    const response = await fetch('/api/admin/reviews', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${data.session?.access_token ?? ''}` },
-      body: JSON.stringify({ sourceListingId, reviewStatus, reviewNote: notes[sourceListingId] ?? '' }),
+    if (!client || !user) return;
+    const { error } = await client.from('listing_reviews').upsert({
+      source_listing_id: sourceListingId,
+      review_status: reviewStatus,
+      review_note: notes[sourceListingId]?.trim() || null,
+      reviewer_id: user.id,
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     });
-    if (!response.ok) {
+    if (error) {
       setMessage('검수 결과를 저장하지 못했습니다.');
       return;
     }

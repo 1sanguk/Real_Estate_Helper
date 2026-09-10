@@ -73,8 +73,8 @@ SH에서 현재 확인된 공개 자료는 실시간 모집공고가 아니라 �
 - Vinext, Vite, Tailwind CSS
 - Supabase Auth, PostgreSQL, Row Level Security
 - 공공데이터포털 OpenAPI
-- GitHub Actions
-- Cloudflare Workers 호환 빌드
+- GitHub Actions (공고 동기화 배치 + GitHub Pages 배포)
+- 정적 사이트(output: 'export')로 빌드해 GitHub Pages에 배포. 회원 탈퇴만 Supabase Edge Function이 처리
 
 코드는 거대한 클래스나 객체에 책임을 몰아넣지 않고 도메인, 기능, 인프라, 화면 단위로 분리하는 Clean Code 원칙을 따릅니다.
 

@@ -349,7 +349,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                       </span>
                     </div>
                     <h3 className={`text-lg font-extrabold ${viewedListingIds.includes(listing.id) ? 'text-muted-foreground' : ''}`}>
-                      <Link href={`/listings/${encodeURIComponent(listing.id)}`} onClick={() => viewListing(listing.id)} className="hover:underline">
+                      <Link href={`/listings/view?id=${encodeURIComponent(listing.id)}`} onClick={() => viewListing(listing.id)} className="hover:underline">
                         {listing.title}
                       </Link>
                     </h3>
@@ -407,7 +407,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                           : '관심 저장'}
                       </Button>
                       <Link
-                        href={`/listings/${encodeURIComponent(listing.id)}`}
+                        href={`/listings/view?id=${encodeURIComponent(listing.id)}`}
                         onClick={() => viewListing(listing.id)}
                         className="inline-flex min-h-9 items-center gap-1 rounded-lg border px-3 py-2 text-center text-xs font-bold whitespace-normal break-keep leading-snug"
                       >

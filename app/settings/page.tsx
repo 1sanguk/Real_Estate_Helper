@@ -76,11 +76,12 @@ export default function SettingsPage() {
 
   async function deleteAccount() {
     const client = getSupabaseClient();
-    if (!client) return;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!client || !supabaseUrl) return;
     setSaving(true);
     const { data } = await client.auth.getSession();
     const token = data.session?.access_token;
-    const response = await fetch('/api/account', {
+    const response = await fetch(`${supabaseUrl}/functions/v1/delete-account`, {
       method: 'DELETE',
       headers: token ? { authorization: `Bearer ${token}` } : {},
     });

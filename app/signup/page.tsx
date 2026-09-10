@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AuthShell } from '@/features/auth/auth-shell';
 import { validateNickname, validatePassword, validateUsername } from '@/features/auth/validation';
+import { getSupabaseClient } from '@/lib/supabase/client';
 
 type Field = 'username' | 'nickname';
 type CheckStatus = 'idle' | 'checking' | 'available' | 'unavailable' | 'error';
@@ -39,10 +40,11 @@ export default function SignupPage() {
     setSubmitMessage(null);
     setCheckStatus(current => ({ ...current, [field]: 'checking' }));
     try {
-      const response = await fetch(`/api/auth/availability?field=${field}&value=${encodeURIComponent(form[field])}`);
-      if (!response.ok) throw new Error('CHECK_FAILED');
-      const result = await response.json() as { available?: boolean };
-      setCheckStatus(current => ({ ...current, [field]: result.available ? 'available' : 'unavailable' }));
+      const client = getSupabaseClient();
+      if (!client) throw new Error('CHECK_FAILED');
+      const { data: available, error } = await client.rpc('is_identifier_available', { p_field: field, p_value: form[field] });
+      if (error) throw new Error('CHECK_FAILED');
+      setCheckStatus(current => ({ ...current, [field]: available ? 'available' : 'unavailable' }));
     } catch {
       setCheckStatus(current => ({ ...current, [field]: 'error' }));
       setSubmitMessage({ type: 'error', text: '중복 확인 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.' });
@@ -59,13 +61,18 @@ export default function SignupPage() {
     if (!agreed) return setSubmitMessage({ type: 'error', text: '서비스 이용 안내와 개인정보 처리 안내에 동의해 주세요.' });
     setLoading(true);
     try {
-      const response = await fetch('/api/auth/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(form) });
-      const result = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? '회원가입에 실패했습니다.');
-      window.sessionStorage.setItem('signup-complete', 'true');
+      const client = getSupabaseClient();
+      if (!client) throw new Error('회원가입 서버에 연결할 수 없습니다.');
+      const { data, error } = await client.auth.signUp({
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
+        options: { data: { username: form.username.trim().toLowerCase(), nickname: form.nickname.trim() } },
+      });
+      if (error) throw new Error(/already|registered|exists|duplicate/i.test(error.message) ? '이미 가입된 이메일이거나 아이디·닉네임이 중복됩니다.' : '회원가입에 실패했습니다. 입력 정보를 확인해 주세요.');
+      window.sessionStorage.setItem('signup-complete', data.session ? 'true' : 'verify-email');
       router.replace('/login');
-    } catch {
-      setSubmitMessage({ type: 'error', text: '회원가입에 실패했습니다. 입력 정보 또는 이미 가입된 이메일인지 확인해 주세요.' });
+    } catch (submitError) {
+      setSubmitMessage({ type: 'error', text: submitError instanceof Error ? submitError.message : '회원가입에 실패했습니다. 입력 정보 또는 이미 가입된 이메일인지 확인해 주세요.' });
     } finally {
       setLoading(false);
     }

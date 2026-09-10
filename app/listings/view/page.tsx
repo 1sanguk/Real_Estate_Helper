@@ -1,7 +1,7 @@
 'use client';
 
-import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -29,9 +29,27 @@ import { markListingViewed } from '@/features/listings/listing-browser-state';
 import { useUserPreferences } from '@/features/user-data/use-user-preferences';
 import { getSupabaseClient } from '@/lib/supabase/client';
 
+function LoadingShell() {
+  return (
+    <main className="grid min-h-screen place-items-center">
+      <p className="text-sm font-semibold text-muted-foreground">
+        공고 상세를 불러오고 있어요…
+      </p>
+    </main>
+  );
+}
+
 export default function ListingDetailPage() {
-  const params = useParams<{ id: string }>();
-  const id = typeof params?.id === 'string' ? params.id : '';
+  return (
+    <Suspense fallback={<LoadingShell />}>
+      <ListingDetailContent />
+    </Suspense>
+  );
+}
+
+function ListingDetailContent() {
+  const searchParams = useSearchParams();
+  const id = searchParams.get('id') ?? '';
   const router = useRouter();
   const { loading, user } = useAuth();
   const [profile, setProfile] = useState<DashboardProfile | null>(null);
@@ -138,14 +156,7 @@ export default function ListingDetailPage() {
     }
   }
 
-  if (loading || !user)
-    return (
-      <main className="grid min-h-screen place-items-center">
-        <p className="text-sm font-semibold text-muted-foreground">
-          공고 상세를 불러오고 있어요…
-        </p>
-      </main>
-    );
+  if (loading || !user) return <LoadingShell />;
 
   const assessment = profile && listing
     ? rules.length ? assessListingWithRules(profile, listing, rules) : assessListing(profile, listing)
