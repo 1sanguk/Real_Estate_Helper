@@ -21,6 +21,7 @@ import { getSupabaseClient } from '@/lib/supabase/client';
 
 type Notification = {
   id: number;
+  source_listing_id: string | null;
   title: string;
   message: string;
   read_at: string | null;
@@ -32,6 +33,7 @@ export default function SettingsPage() {
   const { loading, user, signOut } = useAuth();
   const [newMatchEnabled, setNewMatchEnabled] = useState(true);
   const [deadlineEnabled, setDeadlineEnabled] = useState(true);
+  const [listingChangeEnabled, setListingChangeEnabled] = useState(true);
   const [deadlineDays, setDeadlineDays] = useState(3);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [message, setMessage] = useState('');
@@ -45,13 +47,14 @@ export default function SettingsPage() {
     const client = getSupabaseClient();
     if (!client || !user) return;
     void Promise.all([
-      client.from('notification_preferences').select('new_match_enabled,deadline_enabled,deadline_days').eq('user_id', user.id).maybeSingle(),
-      client.from('user_notifications').select('id,title,message,read_at,created_at').eq('user_id', user.id).order('created_at', { ascending: false }).limit(30),
+      client.from('notification_preferences').select('new_match_enabled,deadline_enabled,deadline_days,listing_change_enabled').eq('user_id', user.id).maybeSingle(),
+      client.from('user_notifications').select('id,source_listing_id,title,message,read_at,created_at').eq('user_id', user.id).order('created_at', { ascending: false }).limit(30),
     ]).then(([preferenceResult, notificationResult]) => {
       if (preferenceResult.data) {
         setNewMatchEnabled(preferenceResult.data.new_match_enabled);
         setDeadlineEnabled(preferenceResult.data.deadline_enabled);
         setDeadlineDays(preferenceResult.data.deadline_days);
+        setListingChangeEnabled(preferenceResult.data.listing_change_enabled);
       }
       if (notificationResult.data) setNotifications(notificationResult.data);
       void client.from('user_notifications').update({ read_at: new Date().toISOString() }).eq('user_id', user.id).is('read_at', null);
@@ -68,6 +71,7 @@ export default function SettingsPage() {
       new_match_enabled: newMatchEnabled,
       deadline_enabled: deadlineEnabled,
       deadline_days: deadlineDays,
+      listing_change_enabled: listingChangeEnabled,
       updated_at: new Date().toISOString(),
     });
     setMessage(error ? '알림 설정을 저장하지 못했습니다.' : '알림 설정을 저장했습니다.');
@@ -109,6 +113,7 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <label className="flex items-center justify-between gap-4 rounded-xl bg-secondary p-4"><span><strong className="block">새로운 지원 가능 공고</strong><small className="text-muted-foreground">자동 재판정에서 가능성 있음으로 나온 새 공고를 알려드립니다.</small></span><input type="checkbox" checked={newMatchEnabled} onChange={(event) => setNewMatchEnabled(event.target.checked)} /></label>
             <label className="flex items-center justify-between gap-4 rounded-xl bg-secondary p-4"><span><strong className="block">접수 마감 알림</strong><small className="text-muted-foreground">마감일이 확인된 관심 공고를 미리 알려드립니다.</small></span><input type="checkbox" checked={deadlineEnabled} onChange={(event) => setDeadlineEnabled(event.target.checked)} /></label>
+            <label className="flex items-center justify-between gap-4 rounded-xl bg-secondary p-4"><span><strong className="block">관심 공고 변경 알림</strong><small className="text-muted-foreground">접수 기간, 공급 수, 진행 상태 등 중요한 내용이 바뀌면 알려드립니다.</small></span><input type="checkbox" checked={listingChangeEnabled} onChange={(event) => setListingChangeEnabled(event.target.checked)} /></label>
             <label className="flex items-center gap-3 text-sm font-bold">마감 며칠 전 알림<input type="number" min="1" max="30" value={deadlineDays} onChange={(event) => setDeadlineDays(Math.max(1, Math.min(30, Number(event.target.value) || 1)))} className="w-20 rounded-lg border p-2" /></label>
             <Button className="min-h-10 h-auto px-4 py-2" onClick={() => void savePreferences()} disabled={saving}>{saving ? '저장 중…' : '알림 설정 저장'}</Button>
           </div>
@@ -117,7 +122,7 @@ export default function SettingsPage() {
         <section className="rounded-2xl border bg-white p-6">
           <h2 className="text-lg font-extrabold">최근 알림</h2>
           <div className="mt-4 space-y-2">
-            {notifications.length ? notifications.map((notification) => <div key={notification.id} className="rounded-xl border p-4"><strong className="text-sm">{notification.title}</strong><p className="mt-1 text-sm text-muted-foreground">{notification.message}</p><time className="mt-2 block text-xs text-muted-foreground">{new Date(notification.created_at).toLocaleString('ko-KR')}</time></div>) : <p className="rounded-xl bg-secondary p-4 text-sm text-muted-foreground">아직 생성된 알림이 없습니다.</p>}
+            {notifications.length ? notifications.map((notification) => <div key={notification.id} className="rounded-xl border p-4"><strong className="text-sm">{notification.title}</strong><p className="mt-1 text-sm text-muted-foreground">{notification.message}</p><div className="mt-2 flex items-center justify-between gap-3"><time className="text-xs text-muted-foreground">{new Date(notification.created_at).toLocaleString('ko-KR')}</time>{notification.source_listing_id && <Link href={`/listings/view?id=${encodeURIComponent(notification.source_listing_id)}`} className="text-xs font-bold text-primary">공고 확인</Link>}</div></div>) : <p className="rounded-xl bg-secondary p-4 text-sm text-muted-foreground">아직 생성된 알림이 없습니다.</p>}
           </div>
         </section>
 

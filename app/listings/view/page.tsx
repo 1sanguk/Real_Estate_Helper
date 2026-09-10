@@ -26,6 +26,7 @@ import {
 import { commonRequiredDocuments } from '@/domain/documents';
 import { useAuth } from '@/features/auth/auth-context';
 import { markListingViewed } from '@/features/listings/listing-browser-state';
+import { EligibilitySimulator } from '@/features/listings/eligibility-simulator';
 import { useUserPreferences } from '@/features/user-data/use-user-preferences';
 import { getSupabaseClient } from '@/lib/supabase/client';
 
@@ -59,6 +60,7 @@ function ListingDetailContent() {
   const [rules, setRules] = useState<StoredEligibilityRule[]>([]);
   const [requiredDocuments, setRequiredDocuments] = useState<Array<{ id: number; document_name: string; requirement_type: string; issuer: string | null; evidence_text: string }>>([]);
   const [reviewStatus, setReviewStatus] = useState<string | null>(null);
+  const [changeEvents, setChangeEvents] = useState<Array<{ id: number; summary: string; detected_at: string }>>([]);
   const [notFound, setNotFound] = useState(false);
   const [listingError, setListingError] = useState('');
   const [pageLoading, setPageLoading] = useState(true);
@@ -117,12 +119,14 @@ function ListingDetailContent() {
       client.from('listing_eligibility_rules').select('rule_key,operator,numeric_value,text_value,description,evidence_text,confidence').eq('source_listing_id', id).order('id'),
       client.from('listing_required_documents').select('id,document_name,requirement_type,issuer,evidence_text').eq('source_listing_id', id).order('requirement_type').order('id'),
       client.from('listing_reviews').select('review_status').eq('source_listing_id', id).maybeSingle(),
-    ]).then(([detailResult, attachmentResult, ruleResult, documentResult, reviewResult]) => {
+      client.from('listing_change_events').select('id,summary,detected_at').eq('source_listing_id', id).order('detected_at', { ascending: false }).limit(10),
+    ]).then(([detailResult, attachmentResult, ruleResult, documentResult, reviewResult, changeResult]) => {
       if (!detailResult.error && detailResult.data) setDetail(detailResult.data);
       if (!attachmentResult.error && attachmentResult.data) setAttachments(attachmentResult.data);
       if (!ruleResult.error && ruleResult.data) setRules(ruleResult.data);
       if (!documentResult.error && documentResult.data) setRequiredDocuments(documentResult.data);
       if (!reviewResult.error && reviewResult.data) setReviewStatus(reviewResult.data.review_status);
+      if (!changeResult.error && changeResult.data) setChangeEvents(changeResult.data);
     });
   }, [user, id]);
 
@@ -271,6 +275,18 @@ function ListingDetailContent() {
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">{check.detail}</p>
                     </div>
                   ))}
+                </div>
+              </section>
+            )}
+
+            {profile && <EligibilitySimulator profile={profile} listing={listing} rules={rules} />}
+
+            {changeEvents.length > 0 && (
+              <section className="rounded-2xl border bg-white p-6">
+                <h2 className="font-extrabold">공고 변경 이력</h2>
+                <p className="mt-1 text-sm text-muted-foreground">공식 API를 다시 수집하면서 달라진 주요 내용을 기록합니다.</p>
+                <div className="mt-4 space-y-2">
+                  {changeEvents.map((event) => <div key={event.id} className="rounded-xl border p-4"><p className="text-sm leading-6">{event.summary}</p><time className="mt-2 block text-xs text-muted-foreground">{new Date(event.detected_at).toLocaleString('ko-KR')}</time></div>)}
                 </div>
               </section>
             )}
