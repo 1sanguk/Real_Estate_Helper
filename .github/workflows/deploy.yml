@@ -30,13 +30,15 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
       - name: Disable Jekyll processing
-        run: touch dist/client/.nojekyll
+        run: touch dist/client/Real_Estate_Helper/.nojekyll
       - name: Add index.html for the basePath root
         run: cp dist/client/Real_Estate_Helper.html dist/client/Real_Estate_Helper/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist/client
+          # vinext는 basePath 폴더 안에 공개 파일을 생성한다. 이 폴더의 내용이
+          # GitHub Pages 저장소 경로의 루트에서 제공되어야 중복 경로가 생기지 않는다.
+          path: dist/client/Real_Estate_Helper
 
   deploy:
     environment:
