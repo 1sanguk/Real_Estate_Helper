@@ -199,6 +199,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
           <nav className="flex items-center gap-7 text-sm font-bold">
             <a href="#listings">실제 공고</a>
             <Link href="/saved">관심 공고</Link>
+            <Link href="/calendar">지원 일정</Link>
             <Link href="/profile/setup">내 조건 수정</Link>
             <Link href="/settings">알림·개인정보{unreadNotificationCount > 0 ? ` ${unreadNotificationCount}` : ''}</Link>
             <Button

@@ -27,6 +27,7 @@ import { commonRequiredDocuments } from '@/domain/documents';
 import { useAuth } from '@/features/auth/auth-context';
 import { markListingViewed } from '@/features/listings/listing-browser-state';
 import { EligibilitySimulator } from '@/features/listings/eligibility-simulator';
+import { EligibilitySummary } from '@/features/listings/eligibility-summary';
 import { useUserPreferences } from '@/features/user-data/use-user-preferences';
 import { getSupabaseClient } from '@/lib/supabase/client';
 
@@ -265,6 +266,7 @@ function ListingDetailContent() {
                   {assessment.status}
                 </span>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">{assessment.reason}</p>
+                <EligibilitySummary checks={eligibilityChecks} />
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {eligibilityChecks.map((check) => (
                     <div key={check.key} className="rounded-xl border p-3">
