@@ -11,6 +11,7 @@ import { getListingId, LhApiClient } from '../infrastructure/lh/lh-api.ts';
 import { HugApiClient } from '../infrastructure/hug/hug-api.ts';
 import { runListingChangeWorkflow } from '../application/listing-change-workflow.ts';
 import { preserveKnownListingDetails, type ComparableListing } from '../domain/listing-changes.ts';
+import { applicationPeriodFromSchedules } from '../domain/listing-schedule.ts';
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -62,7 +63,13 @@ async function main() {
       ? new HugApiClient(process.env.HUG_LISTINGS_API_URL, publicServiceKey())
       : null;
     const hugResult = hugClient ? await hugClient.fetchListings() : { listings: [], rowsById: new Map<string, LhApiRow[]>() };
-    const allListings = [...listings, ...hugResult.listings];
+    const detailById = new Map(details.map((detail) => [detail.panId, detail]));
+    const allListings = [...listings, ...hugResult.listings].map((listing) => ({
+      ...listing,
+      applicationPeriod: listing.applicationPeriod
+        ?? applicationPeriodFromSchedules(detailById.get(listing.id)?.schedules ?? [])
+        ?? undefined,
+    }));
     if (!listings.length) throw new Error('공식 API에서 유효한 공고를 찾지 못해 기존 데이터를 보존했습니다.');
     const rawById = new Map(announcementRows.map((row) => [getListingId(row), row]));
     const collectedRows = allListings.map((item) => toDatabaseRow(item, rawById.get(item.id) ?? { items: hugResult.rowsById.get(item.id) ?? [] }));

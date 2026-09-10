@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createListingSchedule, datesInRange, parseApplicationPeriod } from '../domain/listing-schedule.ts';
+import { applicationPeriodFromSchedules, createListingSchedule, datesInRange, parseApplicationPeriod } from '../domain/listing-schedule.ts';
 import type { OfficialListing } from '../domain/dashboard.ts';
 
 void test('공고 접수 기간의 여러 날짜 표기를 해석한다', () => {
@@ -36,4 +36,13 @@ void test('오늘을 기준으로 마감 D-day를 계산한다', () => {
   } as OfficialListing;
   const schedule = createListingSchedule(listing, new Date(2026, 8, 10, 18));
   assert.equal(schedule?.daysUntilDeadline, 8);
+});
+
+void test('상세 API의 신청 시작·종료 일시로 누락된 접수 기간을 보완한다', () => {
+  assert.equal(applicationPeriodFromSchedules([{
+    ACP_ST_DTTM: '2026.09.22 10:00',
+    ACP_ED_DTTM: '2026.09.22 12:00',
+    LTR_DTTM: '2026.09.22 15:00',
+  }]), '2026-09-22~2026-09-22');
+  assert.equal(applicationPeriodFromSchedules([{ RQS_SCD: '2026-09-15' }]), '2026-09-15~2026-09-15');
 });

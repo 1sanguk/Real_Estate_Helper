@@ -9,6 +9,33 @@ export type ListingSchedule = {
   daysUntilDeadline: number;
 };
 
+const START_DATE_KEYS = ['ACP_ST_DTTM', 'RQS_ST_DTTM', 'RQS_ST_DT', 'RQS_SCD'];
+const END_DATE_KEYS = ['ACP_ED_DTTM', 'RQS_ED_DTTM', 'RQS_ED_DT', 'RQS_SCD'];
+
+function scheduleDate(row: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value !== 'string' && typeof value !== 'number') continue;
+    const parsed = toIsoDate(String(value));
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+export function applicationPeriodFromSchedules(
+  schedules: Record<string, unknown>[],
+): string | null {
+  const periods = schedules.flatMap((schedule) => {
+    const startDate = scheduleDate(schedule, START_DATE_KEYS);
+    const endDate = scheduleDate(schedule, END_DATE_KEYS) ?? startDate;
+    return startDate && endDate ? [{ startDate, endDate }] : [];
+  });
+  if (!periods.length) return null;
+  const startDate = periods.map((period) => period.startDate).sort()[0]!;
+  const endDate = periods.map((period) => period.endDate).sort().at(-1)!;
+  return `${startDate}~${endDate}`;
+}
+
 function toIsoDate(value: string, fallbackYear?: string): string | null {
   const numbers = value.trim().match(/\d+/g) ?? [];
   if (numbers.length >= 3) {
