@@ -173,14 +173,16 @@ async function main() {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await supabase.from('listing_sync_runs').update({ status: 'failed', completed_at: new Date().toISOString(), error_message: message.slice(0, 1000) }).eq('id', run.id);
-    const { data: admins } = await supabase.from('admin_users').select('user_id');
-    if (admins?.length) await supabase.from('user_notifications').insert(admins.map((admin) => ({
-      user_id: admin.user_id,
-      source_listing_id: null,
-      kind: 'sync_failed',
-      title: '공고 자동 동기화 실패',
-      message: `공고 수집이 완료되지 않았습니다: ${message.slice(0, 300)}`,
-    })));
+    if (process.env.NOTIFY_SYNC_FAILURE !== 'false') {
+      const { data: admins } = await supabase.from('admin_users').select('user_id');
+      if (admins?.length) await supabase.from('user_notifications').insert(admins.map((admin) => ({
+        user_id: admin.user_id,
+        source_listing_id: null,
+        kind: 'sync_failed',
+        title: '공고 자동 동기화 실패',
+        message: `공고 수집이 완료되지 않았습니다: ${message.slice(0, 300)}`,
+      })));
+    }
     throw error;
   }
 }

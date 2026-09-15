@@ -111,3 +111,20 @@ void test('일시적인 네트워크 실패 후 LH API 호출을 다시 시도�
   await client.fetchAnnouncements();
   assert.equal(attempts, 2);
 });
+
+void test('최종 네트워크 오류에 fetch의 원인 코드를 포함한다', async () => {
+  const client = new LhApiClient({
+    serviceKey: 'test-key',
+    announcementUrl: 'https://example.test/notices',
+    retryBaseDelayMs: 1,
+    fetchImplementation: async () => {
+      throw new TypeError('fetch failed', {
+        cause: new Error('connect ECONNRESET 192.0.2.1:443'),
+      });
+    },
+  });
+  await assert.rejects(
+    () => client.fetchAnnouncements(),
+    /fetch failed \(connect ECONNRESET 192\.0\.2\.1:443\)/,
+  );
+});

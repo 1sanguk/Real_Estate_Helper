@@ -45,6 +45,14 @@ function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause = error.cause;
+  if (!cause || cause === error) return error.message;
+  const causeMessage = describeError(cause);
+  return causeMessage === error.message ? error.message : `${error.message} (${causeMessage})`;
+}
+
 function isRecord(value: unknown): value is LhApiRow {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -208,7 +216,7 @@ export class LhApiClient {
           await wait(this.#retryBaseDelayMs * 2 ** attempt);
           continue;
         }
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = describeError(error);
         throw new Error(`LH API 연결 실패: ${reason}. ${MAX_RETRY_COUNT + 1}회 시도했지만 공공데이터포털에 연결하지 못했습니다.`);
       }
       const body = await response.text();

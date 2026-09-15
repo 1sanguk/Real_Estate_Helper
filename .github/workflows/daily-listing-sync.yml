@@ -22,7 +22,25 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Collect official notices and recalculate matches
-        run: npm run sync:listings
+        shell: bash
+        run: |
+          max_attempts=3
+          for attempt in $(seq 1 "$max_attempts"); do
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              notify_sync_failure=false
+            else
+              notify_sync_failure=true
+            fi
+            if NOTIFY_SYNC_FAILURE="$notify_sync_failure" npm run sync:listings; then
+              exit 0
+            fi
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              exit 1
+            fi
+            delay_seconds=$((attempt * 60))
+            echo "공고 동기화 연결 실패. ${delay_seconds}초 후 다시 시도합니다. (${attempt}/${max_attempts})"
+            sleep "$delay_seconds"
+          done
         env:
           PUBLIC_SERVICE_KEY: ${{ secrets.PUBLIC_SERVICE_KEY }}
           LH_ANNOUNCEMENT_API_URL: ${{ secrets.LH_ANNOUNCEMENT_API_URL }}
