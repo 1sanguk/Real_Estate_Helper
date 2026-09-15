@@ -53,6 +53,7 @@ async function main() {
       announcementUrl: process.env.LH_ANNOUNCEMENT_API_URL,
       supplyUrl: process.env.LH_SUPPLY_API_URL,
       detailUrl: process.env.LH_SUPPLY_DETAIL_API_URL,
+      allowHttpFallback: process.env.LH_ALLOW_HTTP_FALLBACK === 'true',
     });
     const announcementRows = await lhClient.fetchAnnouncements();
     const activeAnnouncements = announcementRows.filter(isActiveAnnouncement);

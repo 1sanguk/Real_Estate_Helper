@@ -128,3 +128,28 @@ void test('최종 네트워크 오류에 fetch의 원인 코드를 포함한다'
     /fetch failed \(connect ECONNRESET 192\.0\.2\.1:443\)/,
   );
 });
+
+void test('허용된 경우 공공데이터포털 HTTPS 연결 실패 후 HTTP 게이트웨이를 재사용한다', async () => {
+  const requestedUrls: string[] = [];
+  const client = new LhApiClient({
+    serviceKey: 'test-key',
+    announcementUrl: 'https://apis.data.go.kr/notices',
+    supplyUrl: 'https://apis.data.go.kr/supply',
+    allowHttpFallback: true,
+    fetchImplementation: async (input) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.startsWith('https:')) throw new TypeError('fetch failed');
+      const body = url.includes('/supply/')
+        ? [{ dsList: [{ HSH_CNT: '10' }] }]
+        : [{ dsList: [{ PAN_ID: 'P-1' }] }];
+      return new Response(JSON.stringify(body), { status: 200 });
+    },
+  });
+
+  const announcements = await client.fetchAnnouncements();
+  await client.fetchSupplies(announcements);
+
+  assert.equal(requestedUrls.filter((url) => url.startsWith('https:')).length, 1);
+  assert.equal(requestedUrls.filter((url) => url.startsWith('http:')).length, 2);
+});

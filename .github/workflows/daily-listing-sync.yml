@@ -46,6 +46,7 @@ jobs:
           LH_ANNOUNCEMENT_API_URL: ${{ secrets.LH_ANNOUNCEMENT_API_URL }}
           LH_SUPPLY_API_URL: ${{ secrets.LH_SUPPLY_API_URL }}
           LH_SUPPLY_DETAIL_API_URL: ${{ secrets.LH_SUPPLY_DETAIL_API_URL }}
+          LH_ALLOW_HTTP_FALLBACK: 'true'
           HUG_LISTINGS_API_URL: ${{ secrets.HUG_LISTINGS_API_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

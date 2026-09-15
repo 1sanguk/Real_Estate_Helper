@@ -47,6 +47,10 @@ function wait(milliseconds: number): Promise<void> {
 
 function describeError(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
+  if (error instanceof AggregateError) {
+    const reasons = error.errors.map(describeError).join('; ');
+    return reasons ? `${error.message} (${reasons})` : error.message;
+  }
   const cause = error.cause;
   if (!cause || cause === error) return error.message;
   const causeMessage = describeError(cause);
@@ -108,6 +112,7 @@ export type LhApiClientOptions = {
   fetchImplementation?: typeof fetch;
   requestTimeoutMs?: number;
   retryBaseDelayMs?: number;
+  allowHttpFallback?: boolean;
 };
 
 export class LhApiClient {
@@ -118,6 +123,8 @@ export class LhApiClient {
   readonly #fetch: typeof fetch;
   readonly #requestTimeoutMs: number;
   readonly #retryBaseDelayMs: number;
+  readonly #allowHttpFallback: boolean;
+  #useHttpFallback = false;
 
   constructor(options: LhApiClientOptions) {
     this.#serviceKey = normalizeServiceKey(options.serviceKey);
@@ -136,6 +143,7 @@ export class LhApiClient {
     this.#fetch = options.fetchImplementation ?? fetch;
     this.#requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
     this.#retryBaseDelayMs = options.retryBaseDelayMs ?? RETRY_BASE_DELAY_MS;
+    this.#allowHttpFallback = options.allowHttpFallback ?? false;
   }
 
   async fetchAnnouncements(): Promise<LhApiRow[]> {
@@ -205,18 +213,30 @@ export class LhApiClient {
     url.searchParams.set('_type', 'json');
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     for (let attempt = 0; attempt <= MAX_RETRY_COUNT; attempt++) {
-      let response: Response;
+      let response: Response | undefined;
+      let connectionError: unknown;
       try {
-        response = await this.#fetch(url, {
-          headers: { accept: 'application/json' },
-          signal: AbortSignal.timeout(this.#requestTimeoutMs),
-        });
+        response = await this.#fetch(this.#requestUrl(url), this.#requestOptions());
       } catch (error) {
+        connectionError = error;
+        if (this.#canUseHttpFallback(url)) {
+          try {
+            const fallbackUrl = new URL(url);
+            fallbackUrl.protocol = 'http:';
+            response = await this.#fetch(fallbackUrl, this.#requestOptions());
+            this.#useHttpFallback = true;
+            console.warn('공공데이터포털 HTTPS 연결 실패로 HTTP 게이트웨이를 사용합니다.');
+          } catch (fallbackError) {
+            connectionError = new AggregateError([error, fallbackError], 'HTTPS 및 HTTP 연결 실패');
+          }
+        }
+      }
+      if (!response) {
         if (attempt < MAX_RETRY_COUNT) {
           await wait(this.#retryBaseDelayMs * 2 ** attempt);
           continue;
         }
-        const reason = describeError(error);
+        const reason = describeError(connectionError);
         throw new Error(`LH API 연결 실패: ${reason}. ${MAX_RETRY_COUNT + 1}회 시도했지만 공공데이터포털에 연결하지 못했습니다.`);
       }
       const body = await response.text();
@@ -235,6 +255,27 @@ export class LhApiClient {
       }
     }
     return [];
+  }
+
+  #requestUrl(url: URL): URL {
+    if (!this.#useHttpFallback) return url;
+    const fallbackUrl = new URL(url);
+    fallbackUrl.protocol = 'http:';
+    return fallbackUrl;
+  }
+
+  #requestOptions(): RequestInit {
+    return {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(this.#requestTimeoutMs),
+    };
+  }
+
+  #canUseHttpFallback(url: URL): boolean {
+    return this.#allowHttpFallback
+      && !this.#useHttpFallback
+      && url.protocol === 'https:'
+      && url.hostname === 'apis.data.go.kr';
   }
 }
 
