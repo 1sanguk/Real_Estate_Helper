@@ -1,4 +1,4 @@
-export const SESSION_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+export const SESSION_INACTIVITY_TIMEOUT_MS = 60 * 1000;
 
 const SESSION_ACTIVITY_STORAGE_KEY = 'real-estate-helper:last-session-activity';
 
