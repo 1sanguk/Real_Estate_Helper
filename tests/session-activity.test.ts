@@ -16,7 +16,7 @@ function createStorage() {
   };
 }
 
-void test('1분 동안 활동이 없으면 세션이 만료된다', () => {
+void test('30분 동안 활동이 없으면 세션이 만료된다', () => {
   const storage = createStorage();
   recordSessionActivity(storage, 1_000);
 

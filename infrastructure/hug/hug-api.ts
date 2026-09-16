@@ -1,5 +1,8 @@
 import type { LhApiRow, OfficialListing } from '../../domain/dashboard.ts';
 
+export const DEFAULT_HUG_LISTINGS_URL =
+  'https://infuser.odcloud.kr/oas/docs?namespace=15139525/v1';
+
 type HugApiResponse = {
   data?: LhApiRow[];
   totalCount?: number;

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { extractEligibilityRules, extractRequiredDocuments } from '../domain/eligibility-extraction.ts';
 import { extractRemoteDocumentText } from '../infrastructure/documents/extract-text.ts';
+import { extractShApplicationPeriod, shApplicationStatus } from '../infrastructure/sh/sh-api.ts';
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -61,6 +62,17 @@ for (const attachment of pending) {
     if (documents.length) {
       const { error } = await db.from('listing_required_documents').upsert(documents, { onConflict: 'source_listing_id,document_name,requirement_type' });
       if (error) throw error;
+    }
+    if (attachment.source_listing_id.startsWith('SH-')) {
+      const applicationPeriod = extractShApplicationPeriod(text);
+      if (applicationPeriod) {
+        const { error } = await db.from('official_listings').update({
+          application_period: applicationPeriod,
+          status: shApplicationStatus(applicationPeriod),
+          synced_at: now,
+        }).eq('source_listing_id', attachment.source_listing_id);
+        if (error) throw error;
+      }
     }
     succeeded++;
   } catch (error) {
