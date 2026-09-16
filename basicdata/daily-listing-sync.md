@@ -2,7 +2,7 @@
 
 ## 실행 시각
 
-`.github/workflows/daily-listing-sync.yml`이 매일 오전 10시(KST)에 실행된다. GitHub Actions cron은 UTC 기준이므로 `0 1 * * *`로 설정한다. 필요하면 Actions 화면에서 수동 실행할 수 있다.
+`.github/workflows/daily-listing-sync.yml`이 매일 오전 9시 30분(KST)에 실행된다. GitHub Actions cron은 UTC 기준이며 정각의 예약 실행 혼잡을 피하기 위해 `30 0 * * *`로 설정한다. 필요하면 Actions 화면에서 수동 실행할 수 있다.
 
 ## 처리 순서
 

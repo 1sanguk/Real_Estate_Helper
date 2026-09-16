@@ -32,6 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     const authClient = client;
+    let sessionInitialized = false;
 
     function updateSession(nextSession: Session | null) {
       sessionRef.current = nextSession;
@@ -50,13 +51,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     void authClient.auth.getSession().then(async ({ data }) => {
       sessionRef.current = data.session;
-      if (await expireInactiveSession()) return;
+      const expired = await expireInactiveSession();
+      sessionInitialized = true;
+      if (expired) return;
       if (data.session) recordSessionActivity(window.localStorage);
       updateSession(data.session);
     });
 
     const { data } = authClient.auth.onAuthStateChange((event, nextSession) => {
-      if (event === 'INITIAL_SESSION') return;
+      if (!sessionInitialized || event === 'INITIAL_SESSION') return;
       if (event === 'SIGNED_IN' && !sessionRef.current) {
         recordSessionActivity(window.localStorage);
       }

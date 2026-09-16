@@ -2,8 +2,9 @@ name: Daily housing notice sync
 
 on:
   schedule:
-    # GitHub Actions cron은 UTC 기준: 01:00 UTC = 10:00 KST
-    - cron: '0 1 * * *'
+    # GitHub Actions cron은 UTC 기준: 00:30 UTC = 09:30 KST
+    # 정각은 예약 실행이 지연되거나 누락될 수 있어 피한다.
+    - cron: '30 0 * * *'
   workflow_dispatch:
 
 concurrency:
