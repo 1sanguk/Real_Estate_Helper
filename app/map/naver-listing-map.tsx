@@ -58,6 +58,8 @@ function clusterContent(count: number) {
 export function NaverListingMap({ clientId, listings, focusedRegion, metadata, onListingSelect, onToggleSaved, onVisibleListingIdsChange, onFailure }: { clientId: string; listings: OfficialListing[]; focusedRegion: string; metadata: ListingMapMetadata; onListingSelect: (listingId: string) => void; onToggleSaved: (listingId: string) => void; onVisibleListingIdsChange: (listingIds: string[]) => void; onFailure: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<naver.maps.Map | null>(null);
+  const metadataRef = useRef(metadata);
+  metadataRef.current = metadata;
   const markersRef = useRef<naver.maps.Marker[]>([]);
   const infoWindowsRef = useRef<naver.maps.InfoWindow[]>([]);
   const resolvedPositionsRef = useRef<Record<string, naver.maps.LatLng>>({});
@@ -88,8 +90,8 @@ export function NaverListingMap({ clientId, listings, focusedRegion, metadata, o
     if (!map || !ready) return;
     const zoomListener = naver.maps.Event.addListener(map, 'zoom_changed', () => setZoom(map.getZoom()));
     const emitVisibleListings = () => {
-      const bounds = map.getBounds();
-      onVisibleListingIdsChange(listings.filter((listing, index) => bounds.hasPoint(resolvedPositionsRef.current[listing.id] ?? new naver.maps.LatLng(approximateCoordinates(listing, index).latitude, approximateCoordinates(listing, index).longitude))).map((listing) => listing.id));
+      const bounds = map.getBounds() as naver.maps.LatLngBounds;
+      onVisibleListingIdsChange(listings.filter((listing, index) => bounds.hasLatLng(resolvedPositionsRef.current[listing.id] ?? new naver.maps.LatLng(approximateCoordinates(listing, index).latitude, approximateCoordinates(listing, index).longitude))).map((listing) => listing.id));
     };
     const idleListener = naver.maps.Event.addListener(map, 'idle', emitVisibleListings);
     emitVisibleListings();
@@ -110,7 +112,7 @@ export function NaverListingMap({ clientId, listings, focusedRegion, metadata, o
       const position = new naver.maps.LatLng(approximate.latitude, approximate.longitude);
       resolvedPositionsRef.current[listing.id] = position;
       const marker = new naver.maps.Marker({ map, position, title: listing.title, icon: { content: markerContent(listing, false), anchor: new naver.maps.Point(18, 18) } });
-      const infoWindow = new naver.maps.InfoWindow({ content: createListingPopup(listing, false, onListingSelect, metadata[listing.id], onToggleSaved), borderWidth: 0, backgroundColor: 'transparent', anchorSize: new naver.maps.Size(12, 12) });
+      const infoWindow = new naver.maps.InfoWindow({ content: createListingPopup(listing, false, onListingSelect, metadataRef.current[listing.id], onToggleSaved), borderWidth: 0, backgroundColor: 'transparent', anchorSize: new naver.maps.Size(12, 12) });
       naver.maps.Event.addListener(marker, 'click', () => infoWindow.getMap() ? infoWindow.close() : infoWindow.open(map, marker));
       markers.push(marker);
       infoWindows.push(infoWindow);
@@ -119,7 +121,8 @@ export function NaverListingMap({ clientId, listings, focusedRegion, metadata, o
         resolvedPositionsRef.current[listing.id] = resolvedPosition;
         marker.setPosition(resolvedPosition);
         marker.setIcon({ content: markerContent(listing, true), anchor: new naver.maps.Point(18, 18) });
-        infoWindow.setContent(createListingPopup(listing, true, onListingSelect, metadata[listing.id], onToggleSaved));
+        infoWindow.setContent(createListingPopup(listing, true, onListingSelect, metadataRef.current[listing.id], onToggleSaved));
+        naver.maps.Event.trigger(map, 'idle');
       });
     };
     exactListings.forEach((listing, index) => renderListingMarker(listing, index, true));
@@ -137,7 +140,7 @@ export function NaverListingMap({ clientId, listings, focusedRegion, metadata, o
     markersRef.current = markers;
     infoWindowsRef.current = infoWindows;
     return () => { for (const marker of markers) marker.setMap(null); for (const infoWindow of infoWindows) infoWindow.close(); };
-  }, [listings, metadata, onListingSelect, onToggleSaved, ready, zoom]);
+  }, [listings, onListingSelect, onToggleSaved, ready, zoom]);
 
   return <div className="relative overflow-hidden rounded-2xl border bg-white"><div ref={containerRef} className="h-[62vh] min-h-[480px] w-full" /><div className="absolute bottom-3 left-3 z-10 rounded-lg bg-white/95 px-3 py-2 text-xs shadow"><div className="flex gap-3"><span className="text-blue-600">● LH</span><span className="text-green-600">● SH</span><span className="text-red-600">● HUG</span><span className="text-indigo-700">● 숫자: 묶음</span></div><p className="mt-1 text-muted-foreground">실선은 주소 좌표, 점선은 지역 중심의 대략 위치입니다.</p></div></div>;
 }

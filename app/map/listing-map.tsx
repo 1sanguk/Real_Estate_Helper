@@ -33,7 +33,7 @@ export type ListingMapMetadata = Record<string, { assessmentStatus: string; save
 
 export function createListingPopup(listing: OfficialListing, exact: boolean, onListingSelect: (listingId: string) => void, metadata?: ListingMapMetadata[string], onToggleSaved?: (listingId: string) => void) {
   const content = document.createElement('div');
-  content.className = 'min-w-56 max-w-72';
+  content.className = 'min-w-56 max-w-72 rounded-xl border border-slate-200 bg-white p-4 text-slate-950 shadow-xl';
   const agency = document.createElement('strong');
   agency.textContent = `${listing.agency} · ${listing.program}`;
   const titleButton = document.createElement('button');
@@ -58,11 +58,17 @@ export function createListingPopup(listing: OfficialListing, exact: boolean, onL
     content.append(notice);
   }
   if (onToggleSaved) {
+    let saved = metadata?.saved ?? false;
     const saveButton = document.createElement('button');
     saveButton.type = 'button';
     saveButton.className = 'mt-3 rounded-lg border px-3 py-2 text-xs font-bold';
-    saveButton.textContent = metadata?.saved ? '♥ 관심 공고 해제' : '♡ 관심 공고 저장';
-    saveButton.addEventListener('click', () => onToggleSaved(listing.id));
+    saveButton.textContent = saved ? '♥ 관심 공고 해제' : '♡ 관심 공고 저장';
+    saveButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      saved = !saved;
+      saveButton.textContent = saved ? '♥ 관심 공고 해제' : '♡ 관심 공고 저장';
+      onToggleSaved(listing.id);
+    });
     content.append(saveButton);
   }
   return content;
@@ -87,6 +93,8 @@ export function ListingMap({ listings, focusedRegion, metadata, onListingSelect,
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef<Marker[]>([]);
+  const metadataRef = useRef(metadata);
+  metadataRef.current = metadata;
   const [coordinates, setCoordinates] = useState<Record<string, Coordinates>>({});
 
   useEffect(() => {
@@ -136,11 +144,11 @@ export function ListingMap({ listings, focusedRegion, metadata, onListingSelect,
       markerElement.style.backgroundColor = AGENCY_COLORS[listing.agency];
       markerElement.textContent = listing.agency;
       markerElement.style.borderStyle = point.exact ? 'solid' : 'dashed';
-      const popup = new maplibregl.Popup({ offset: 22 }).setDOMContent(createListingPopup(listing, point.exact, onListingSelect, metadata[listing.id], onToggleSaved));
+      const popup = new maplibregl.Popup({ offset: 22 }).setDOMContent(createListingPopup(listing, point.exact, onListingSelect, metadataRef.current[listing.id], onToggleSaved));
       const marker = new maplibregl.Marker({ element: markerElement }).setLngLat([point.longitude, point.latitude]).setPopup(popup).addTo(map);
       return [marker];
     });
-  }, [listings, coordinates, metadata, onListingSelect, onToggleSaved]);
+  }, [listings, coordinates, onListingSelect, onToggleSaved]);
 
   useEffect(() => {
     const map = mapRef.current;
