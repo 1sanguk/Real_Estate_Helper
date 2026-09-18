@@ -2,13 +2,16 @@
 
 import { useCallback, useState } from 'react';
 import type { OfficialListing } from '@/domain/dashboard';
-import { ListingMap } from './listing-map';
+import { ListingMap, type ListingMapMetadata } from './listing-map';
 import { NaverListingMap } from './naver-listing-map';
 
 type ListingMapProviderProps = {
   listings: OfficialListing[];
   focusedRegion: string;
+  metadata: ListingMapMetadata;
   onListingSelect: (listingId: string) => void;
+  onToggleSaved: (listingId: string) => void;
+  onVisibleListingIdsChange: (listingIds: string[]) => void;
 };
 
 export function ListingMapProvider(props: ListingMapProviderProps) {

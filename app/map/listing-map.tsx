@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import maplibregl, { type Map as MapLibreMap, type Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { OfficialListing } from '@/domain/dashboard';
+import { createListingSchedule } from '@/domain/listing-schedule';
 
 export type Coordinates = { longitude: number; latitude: number; exact: boolean };
 
@@ -28,7 +29,9 @@ export function approximateCoordinates(listing: OfficialListing, index: number):
   return { longitude: center[0] + Math.cos(angle) * distance, latitude: center[1] + Math.sin(angle) * distance, exact: false };
 }
 
-export function createListingPopup(listing: OfficialListing, exact: boolean, onListingSelect: (listingId: string) => void) {
+export type ListingMapMetadata = Record<string, { assessmentStatus: string; saved: boolean }>;
+
+export function createListingPopup(listing: OfficialListing, exact: boolean, onListingSelect: (listingId: string) => void, metadata?: ListingMapMetadata[string], onToggleSaved?: (listingId: string) => void) {
   const content = document.createElement('div');
   content.className = 'min-w-56 max-w-72';
   const agency = document.createElement('strong');
@@ -42,11 +45,25 @@ export function createListingPopup(listing: OfficialListing, exact: boolean, onL
   address.className = 'mt-2 text-xs text-slate-600';
   address.textContent = listing.address ?? `${listing.region} 중심 기준 대략 위치`;
   content.append(agency, titleButton, address);
+  const schedule = createListingSchedule(listing);
+  const details = document.createElement('p');
+  details.className = 'mt-2 text-xs font-bold text-slate-700';
+  const deadline = schedule ? schedule.daysUntilDeadline < 0 ? '접수 마감' : schedule.daysUntilDeadline === 0 ? '오늘 마감' : `D-${schedule.daysUntilDeadline}` : '일정 확인 필요';
+  details.textContent = `${metadata?.assessmentStatus ?? '진단 확인 필요'} · ${deadline}${listing.applicationPeriod ? ` · ${listing.applicationPeriod}` : ''}`;
+  content.append(details);
   if (!exact) {
     const notice = document.createElement('p');
     notice.className = 'mt-1 text-[11px] font-bold text-amber-700';
     notice.textContent = '정확한 주소 좌표가 없어 대략 위치로 표시했습니다.';
     content.append(notice);
+  }
+  if (onToggleSaved) {
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'mt-3 rounded-lg border px-3 py-2 text-xs font-bold';
+    saveButton.textContent = metadata?.saved ? '♥ 관심 공고 해제' : '♡ 관심 공고 저장';
+    saveButton.addEventListener('click', () => onToggleSaved(listing.id));
+    content.append(saveButton);
   }
   return content;
 }
@@ -66,7 +83,7 @@ async function geocodeAddress(listing: OfficialListing, signal: AbortSignal): Pr
   return coordinates;
 }
 
-export function ListingMap({ listings, focusedRegion, onListingSelect }: { listings: OfficialListing[]; focusedRegion: string; onListingSelect: (listingId: string) => void }) {
+export function ListingMap({ listings, focusedRegion, metadata, onListingSelect, onToggleSaved, onVisibleListingIdsChange }: { listings: OfficialListing[]; focusedRegion: string; metadata: ListingMapMetadata; onListingSelect: (listingId: string) => void; onToggleSaved: (listingId: string) => void; onVisibleListingIdsChange: (listingIds: string[]) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef<Marker[]>([]);
@@ -118,11 +135,27 @@ export function ListingMap({ listings, focusedRegion, onListingSelect }: { listi
       markerElement.className = 'grid size-9 place-items-center rounded-full border-2 border-white text-xs font-black text-white shadow-lg';
       markerElement.style.backgroundColor = AGENCY_COLORS[listing.agency];
       markerElement.textContent = listing.agency;
-      const popup = new maplibregl.Popup({ offset: 22 }).setDOMContent(createListingPopup(listing, point.exact, onListingSelect));
+      markerElement.style.borderStyle = point.exact ? 'solid' : 'dashed';
+      const popup = new maplibregl.Popup({ offset: 22 }).setDOMContent(createListingPopup(listing, point.exact, onListingSelect, metadata[listing.id], onToggleSaved));
       const marker = new maplibregl.Marker({ element: markerElement }).setLngLat([point.longitude, point.latitude]).setPopup(popup).addTo(map);
       return [marker];
     });
-  }, [listings, coordinates, onListingSelect]);
+  }, [listings, coordinates, metadata, onListingSelect, onToggleSaved]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const updateVisibleListings = () => {
+      const bounds = map.getBounds();
+      onVisibleListingIdsChange(listings.filter((listing) => {
+        const point = coordinates[listing.id];
+        return point ? bounds.contains([point.longitude, point.latitude]) : false;
+      }).map((listing) => listing.id));
+    };
+    map.on('moveend', updateVisibleListings);
+    updateVisibleListings();
+    return () => { map.off('moveend', updateVisibleListings); };
+  }, [listings, coordinates, onVisibleListingIdsChange]);
 
   return <div className="relative overflow-hidden rounded-2xl border bg-white"><div ref={containerRef} className="h-[62vh] min-h-[480px] w-full" /><div className="absolute bottom-3 left-3 z-10 rounded-lg bg-white/95 px-3 py-2 text-xs shadow"><div className="flex gap-3"><span className="text-blue-600">● LH</span><span className="text-green-600">● SH</span><span className="text-red-600">● HUG</span></div><p className="mt-1 text-muted-foreground">주소가 없는 공고는 지역 중심의 대략 위치로 표시됩니다.</p></div></div>;
 }

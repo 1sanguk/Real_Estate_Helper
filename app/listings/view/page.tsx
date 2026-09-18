@@ -71,6 +71,8 @@ function ListingDetailContent() {
   const [docPendingId, setDocPendingId] = useState<number | null>(null);
   const [personalNote, setPersonalNote] = useState('');
   const [notePending, setNotePending] = useState(false);
+  const [applicationStatus, setApplicationStatus] = useState<'검토 전' | '서류 준비 중' | '신청 완료'>('검토 전');
+  const [statusPending, setStatusPending] = useState(false);
   const {
     savedListingIds,
     toggleSavedListing,
@@ -84,6 +86,8 @@ function ListingDetailContent() {
 
   useEffect(() => {
     if (!user || !id) return;
+    const locallySavedStatus = localStorage.getItem(`listing-application-status:${user.id}:${id}`);
+    if (locallySavedStatus === '검토 전' || locallySavedStatus === '서류 준비 중' || locallySavedStatus === '신청 완료') queueMicrotask(() => setApplicationStatus(locallySavedStatus));
     const client = getSupabaseClient();
     if (!client) {
       setListingError('공고 서버에 연결할 수 없습니다.');
@@ -125,7 +129,8 @@ function ListingDetailContent() {
       client.from('listing_reviews').select('review_status').eq('source_listing_id', id).maybeSingle(),
       client.from('listing_change_events').select('id,summary,detected_at').eq('source_listing_id', id).order('detected_at', { ascending: false }).limit(10),
       client.from('saved_listing_notes').select('note').eq('user_id', user.id).eq('source_listing_id', id).maybeSingle(),
-    ]).then(([detailResult, attachmentResult, ruleResult, documentResult, reviewResult, changeResult, noteResult]) => {
+      client.from('listing_application_progress').select('status').eq('user_id', user.id).eq('source_listing_id', id).maybeSingle(),
+    ]).then(([detailResult, attachmentResult, ruleResult, documentResult, reviewResult, changeResult, noteResult, progressResult]) => {
       if (!detailResult.error && detailResult.data) setDetail(detailResult.data);
       if (!attachmentResult.error && attachmentResult.data) setAttachments(attachmentResult.data);
       if (!ruleResult.error && ruleResult.data) setRules(ruleResult.data);
@@ -133,6 +138,7 @@ function ListingDetailContent() {
       if (!reviewResult.error && reviewResult.data) setReviewStatus(reviewResult.data.review_status);
       if (!changeResult.error && changeResult.data) setChangeEvents(changeResult.data);
       if (!noteResult.error && noteResult.data) setPersonalNote(noteResult.data.note);
+      if (!progressResult.error && progressResult.data) setApplicationStatus(progressResult.data.status as typeof applicationStatus);
     });
   }, [user, id]);
 
@@ -179,6 +185,24 @@ function ListingDetailContent() {
     }, { onConflict: 'user_id,source_listing_id' });
     setActionMessage(error ? '개인 메모를 저장하지 못했습니다.' : '개인 메모를 저장했습니다.');
     setNotePending(false);
+  }
+
+  async function updateApplicationStatus(status: typeof applicationStatus) {
+    if (!user || !listing || statusPending) return;
+    const client = getSupabaseClient();
+    if (!client) return;
+    setStatusPending(true);
+    const { error } = await client.from('listing_application_progress').upsert({ user_id: user.id, source_listing_id: listing.id, status, updated_at: new Date().toISOString() }, { onConflict: 'user_id,source_listing_id' });
+    if (error) {
+      localStorage.setItem(`listing-application-status:${user.id}:${listing.id}`, status);
+      setApplicationStatus(status);
+      setActionMessage(`지원 준비 단계를 '${status}'으로 이 브라우저에 저장했습니다.`);
+    } else {
+      localStorage.removeItem(`listing-application-status:${user.id}:${listing.id}`);
+      setApplicationStatus(status);
+      setActionMessage(`지원 준비 단계를 '${status}'으로 변경했습니다.`);
+    }
+    setStatusPending(false);
   }
 
   if (loading || !user) return <LoadingShell />;
@@ -302,6 +326,13 @@ function ListingDetailContent() {
             )}
 
             {profile && <EligibilitySimulator profile={profile} listing={listing} rules={rules} />}
+
+            <section className="rounded-2xl border bg-white p-6">
+              <h2 className="font-extrabold">지원 준비 현황</h2>
+              <p className="mt-1 text-sm text-muted-foreground">공고 검토부터 신청 완료까지 현재 단계를 기록합니다. 아래 서류 준비 현황과 함께 확인하세요.</p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">{(['검토 전', '서류 준비 중', '신청 완료'] as const).map((status) => <button key={status} type="button" disabled={statusPending} onClick={() => void updateApplicationStatus(status)} className={`rounded-xl border px-4 py-3 text-sm font-bold ${applicationStatus === status ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-secondary'}`}>{status}</button>)}</div>
+              <div className="mt-4"><div className="mb-2 flex justify-between text-xs font-bold"><span>서류 준비율</span><span>{readyCount}/{displayedDocuments.length}</span></div><Progress value={docProgress} /></div>
+            </section>
 
             <section className="rounded-2xl border bg-white p-6">
               <h2 className="font-extrabold">개인 메모</h2>
