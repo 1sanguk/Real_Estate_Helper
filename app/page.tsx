@@ -58,6 +58,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
   const { loading, user, signOut } = useAuth();
   const [profile, setProfile] = useState<DashboardProfile | null>(null);
   const [listings, setListings] = useState<OfficialListing[]>([]);
+  const [agency, setAgency] = useState('');
   const [query, setQuery] = useState('');
   const [region, setRegion] = useState('');
   const [possibleOnly, setPossibleOnly] = useState(true);
@@ -72,6 +73,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const { savedListingIds, toggleSavedListing } = useUserPreferences(user?.id);
+  const listingsHref = savedOnly ? '/#listings' : '#listings';
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
@@ -80,6 +82,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
     if (!user) return;
     searchStateReady.current = false;
     const storedState = loadListingSearchState(user.id, savedOnly);
+    setAgency(storedState.agency);
     setQuery(storedState.query);
     setRegion(storedState.region);
     setPossibleOnly(storedState.possibleOnly);
@@ -90,8 +93,8 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
   }, [user, savedOnly]);
   useEffect(() => {
     if (!user || !searchStateReady.current) return;
-    saveListingSearchState(user.id, savedOnly, { query, region, possibleOnly });
-  }, [user, savedOnly, query, region, possibleOnly]);
+    saveListingSearchState(user.id, savedOnly, { agency, query, region, possibleOnly });
+  }, [user, savedOnly, agency, query, region, possibleOnly]);
   useEffect(() => {
     if (!user) return;
     const client = getSupabaseClient();
@@ -156,6 +159,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
   ).length;
   const visible = assessed.filter(({listing, assessment}) =>
     (!savedOnly || savedListingIds.includes(listing.id)) &&
+    (!agency || listing.agency === agency) &&
     (!region || listing.region === region) &&
     (!possibleOnly || assessment.status === '가능성 있음') &&
     `${listing.title} ${listing.region} ${listing.address ?? ''} ${listing.program}`.toLowerCase().includes(query.trim().toLowerCase())
@@ -197,7 +201,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
             <strong className="text-lg">내집레이더</strong>
           </Link>
           <nav className="flex items-center gap-7 text-sm font-bold">
-            <a href="#listings">실제 공고</a>
+            <Link href={listingsHref}>실제 공고</Link>
             <Link href="/saved">관심 공고</Link>
             <Link href="/calendar">지원 일정</Link>
             <Link href="/profile/setup">내 조건 수정</Link>
@@ -223,8 +227,8 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
           </p>
         )}
         <section className="grid gap-6 lg:grid-cols-[1.5fr_.8fr]">
-          <a
-            href="#listings"
+          <Link
+            href={listingsHref}
             className="hero-panel relative flex min-h-72 flex-col justify-center overflow-hidden rounded-[28px] p-9 text-white"
           >
             <span className="mb-4 w-fit rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold">
@@ -243,7 +247,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
               현재 확인된 실제 임대 공고 {listings.length}건
               {lastSyncedAt ? ` · 최근 갱신 ${new Date(lastSyncedAt).toLocaleString('ko-KR')}` : ''}
             </p>
-          </a>
+          </Link>
           <section className="rounded-[28px] border bg-white p-6 shadow-sm">
             <div className="mb-5 flex items-center justify-between">
               <div>
@@ -323,11 +327,12 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
               검색 결과 {visible.length}건
             </strong>
           </div>
-          <div className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-white p-4">
-            <label className="flex flex-col gap-1 text-sm">공고 검색<input className="rounded border p-2" placeholder="공고명, 지역, 주소, 사업 유형" value={query} onChange={event => setQuery(event.target.value)} /></label>
-            <label className="flex flex-col gap-1 text-sm">지역<select className="rounded border p-2" value={region} onChange={event => setRegion(event.target.value)}><option value="">전체 지역</option>{[...new Set(listings.map(item => item.region))].sort().map(value => <option key={value}>{value}</option>)}</select></label>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={possibleOnly} onChange={event => setPossibleOnly(event.target.checked)} />내가 지원할 수 있는 공고만</label>
-            <Button className="min-h-10 h-auto whitespace-normal break-keep px-4 py-2" variant="outline" onClick={() => { setQuery(''); setRegion(''); setPossibleOnly(true); }}>검색 조건 초기화</Button>
+          <div className="mb-5 grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-[140px_180px_minmax(240px,1fr)_auto_auto] md:items-end">
+            <label className="flex flex-col gap-1 text-sm">기관<select className="h-10 rounded border px-3" value={agency} onChange={event => setAgency(event.target.value)}><option value="">전체 기관</option><option value="SH">SH</option><option value="LH">LH</option><option value="HUG">HUG</option></select></label>
+            <label className="flex flex-col gap-1 text-sm">지역<select className="h-10 rounded border px-3" value={region} onChange={event => setRegion(event.target.value)}><option value="">전체 지역</option>{[...new Set(listings.map(item => item.region))].sort().map(value => <option key={value}>{value}</option>)}</select></label>
+            <label className="flex flex-col gap-1 text-sm">공고 검색<input className="h-10 rounded border px-3" placeholder="공고명, 지역, 주소, 사업 유형" value={query} onChange={event => setQuery(event.target.value)} /></label>
+            <label className="flex h-10 items-center gap-2 whitespace-nowrap rounded-lg border px-3 text-sm"><input type="checkbox" checked={possibleOnly} onChange={event => setPossibleOnly(event.target.checked)} />내가 지원할 수 있는 공고만</label>
+            <Button className="h-10 whitespace-nowrap px-4" variant="outline" onClick={() => { setAgency(''); setRegion(''); setQuery(''); setPossibleOnly(true); }}>초기화</Button>
           </div>
           {actionMessage && <p role="status" className="mb-4 rounded border p-3">{actionMessage}</p>}
           {listingError && <p role="alert" className="mb-4 text-destructive">{listingError} <button onClick={() => window.location.reload()}>다시 시도</button></p>}
@@ -380,18 +385,18 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                         <span
                           key={check.key}
                           title={check.detail}
-                          className={`rounded-full px-2 py-1 text-xs font-bold ${check.status === '충족' ? 'bg-primary/10 text-primary' : check.status === '미충족' ? 'bg-destructive/10 text-destructive' : 'bg-[#fff4d6] text-[#76580d]'}`}
+                          className={`rounded-full px-2 py-1 text-xs font-bold ${check.status === '충족' ? 'bg-emerald-100 text-emerald-700' : check.status === '미충족' ? 'bg-red-100 text-red-700' : 'bg-[#fff4d6] text-[#76580d]'}`}
                         >
                           {check.label} {check.status}
                         </span>
                       ))}
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-3 grid grid-cols-2 gap-2">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="min-h-9 h-auto whitespace-normal break-keep px-3 py-2"
+                        className="min-h-9 h-auto w-full whitespace-normal break-keep px-3 py-2"
                         disabled={pendingId !== null}
                         onClick={() => void saveListing(listing.id)}
                       >
@@ -410,7 +415,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                       <Link
                         href={`/listings/view?id=${encodeURIComponent(listing.id)}`}
                         onClick={() => viewListing(listing.id)}
-                        className="inline-flex min-h-9 items-center gap-1 rounded-lg border px-3 py-2 text-center text-xs font-bold whitespace-normal break-keep leading-snug"
+                        className="inline-flex min-h-9 items-center justify-center gap-1 rounded-lg border px-3 py-2 text-center text-xs font-bold whitespace-normal break-keep leading-snug"
                       >
                         상세·서류 보기
                       </Link>
@@ -418,7 +423,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                         href={listing.sourceUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex min-h-9 items-center gap-1 rounded-lg bg-primary px-3 py-2 text-center text-xs font-bold text-white whitespace-normal break-keep leading-snug"
+                        className="col-span-2 inline-flex min-h-9 w-full items-center justify-center gap-1 rounded-lg bg-primary px-3 py-2 text-center text-xs font-bold text-white whitespace-normal break-keep leading-snug"
                       >
                         공식 원문
                         <ArrowUpRight className="size-3.5" />

@@ -1,12 +1,14 @@
 'use client';
 
 export type ListingSearchState = {
+  agency: string;
   query: string;
   region: string;
   possibleOnly: boolean;
 };
 
 const DEFAULT_SEARCH_STATE: ListingSearchState = {
+  agency: '',
   query: '',
   region: '',
   possibleOnly: true,
@@ -26,6 +28,7 @@ export function loadListingSearchState(userId: string, savedOnly: boolean) {
     if (!stored) return DEFAULT_SEARCH_STATE;
     const parsed = JSON.parse(stored) as Partial<ListingSearchState>;
     return {
+      agency: typeof parsed.agency === 'string' ? parsed.agency : '',
       query: typeof parsed.query === 'string' ? parsed.query : '',
       region: typeof parsed.region === 'string' ? parsed.region : '',
       possibleOnly:
