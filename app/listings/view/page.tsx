@@ -365,7 +365,7 @@ function ListingDetailContent() {
               </section>
             )}
 
-            {(detail?.complexes.length || detail?.application_schedules.length) && (
+            {detail !== null && (detail.complexes.length > 0 || detail.application_schedules.length > 0) && (
               <section className="rounded-2xl border bg-white p-6">
                 <h2 className="font-extrabold">공급 및 신청 일정</h2>
                 {detail.complexes.map((complex, index) => {
