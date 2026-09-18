@@ -5,10 +5,10 @@ import maplibregl, { type Map as MapLibreMap, type Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { OfficialListing } from '@/domain/dashboard';
 
-type Coordinates = { longitude: number; latitude: number; exact: boolean };
+export type Coordinates = { longitude: number; latitude: number; exact: boolean };
 
-const KOREA_CENTER: [number, number] = [127.7669, 35.9078];
-const REGION_CENTERS: Record<string, [number, number]> = {
+export const KOREA_CENTER: [number, number] = [127.7669, 35.9078];
+export const REGION_CENTERS: Record<string, [number, number]> = {
   서울: [126.978, 37.5665], 서울특별시: [126.978, 37.5665], 부산: [129.0756, 35.1796], 부산광역시: [129.0756, 35.1796],
   대구: [128.6014, 35.8714], 대구광역시: [128.6014, 35.8714], 인천: [126.7052, 37.4563], 인천광역시: [126.7052, 37.4563],
   광주: [126.8526, 35.1595], 광주광역시: [126.8526, 35.1595], 대전: [127.3845, 36.3504], 대전광역시: [127.3845, 36.3504],
@@ -19,13 +19,36 @@ const REGION_CENTERS: Record<string, [number, number]> = {
   경북: [128.5058, 36.5759], 경상북도: [128.5058, 36.5759], 경남: [128.6919, 35.2383], 경상남도: [128.6919, 35.2383],
   제주: [126.5312, 33.4996], 제주특별자치도: [126.5312, 33.4996],
 };
-const AGENCY_COLORS = { LH: '#2563eb', SH: '#16a34a', HUG: '#dc2626' } as const;
+export const AGENCY_COLORS = { LH: '#2563eb', SH: '#16a34a', HUG: '#dc2626' } as const;
 
-function approximateCoordinates(listing: OfficialListing, index: number): Coordinates {
+export function approximateCoordinates(listing: OfficialListing, index: number): Coordinates {
   const center = REGION_CENTERS[listing.region] ?? KOREA_CENTER;
   const angle = (index * 137.5 * Math.PI) / 180;
   const distance = 0.025 + (index % 4) * 0.008;
   return { longitude: center[0] + Math.cos(angle) * distance, latitude: center[1] + Math.sin(angle) * distance, exact: false };
+}
+
+export function createListingPopup(listing: OfficialListing, exact: boolean, onListingSelect: (listingId: string) => void) {
+  const content = document.createElement('div');
+  content.className = 'min-w-56 max-w-72';
+  const agency = document.createElement('strong');
+  agency.textContent = `${listing.agency} · ${listing.program}`;
+  const titleButton = document.createElement('button');
+  titleButton.type = 'button';
+  titleButton.className = 'mt-2 block w-full text-left text-sm font-extrabold text-blue-700 hover:underline';
+  titleButton.textContent = listing.title;
+  titleButton.addEventListener('click', () => onListingSelect(listing.id));
+  const address = document.createElement('p');
+  address.className = 'mt-2 text-xs text-slate-600';
+  address.textContent = listing.address ?? `${listing.region} 중심 기준 대략 위치`;
+  content.append(agency, titleButton, address);
+  if (!exact) {
+    const notice = document.createElement('p');
+    notice.className = 'mt-1 text-[11px] font-bold text-amber-700';
+    notice.textContent = '정확한 주소 좌표가 없어 대략 위치로 표시했습니다.';
+    content.append(notice);
+  }
+  return content;
 }
 
 async function geocodeAddress(listing: OfficialListing, signal: AbortSignal): Promise<Coordinates | null> {
@@ -95,8 +118,8 @@ export function ListingMap({ listings, focusedRegion, onListingSelect }: { listi
       markerElement.className = 'grid size-9 place-items-center rounded-full border-2 border-white text-xs font-black text-white shadow-lg';
       markerElement.style.backgroundColor = AGENCY_COLORS[listing.agency];
       markerElement.textContent = listing.agency;
-      markerElement.addEventListener('click', () => onListingSelect(listing.id));
-      const marker = new maplibregl.Marker({ element: markerElement }).setLngLat([point.longitude, point.latitude]).addTo(map);
+      const popup = new maplibregl.Popup({ offset: 22 }).setDOMContent(createListingPopup(listing, point.exact, onListingSelect));
+      const marker = new maplibregl.Marker({ element: markerElement }).setLngLat([point.longitude, point.latitude]).setPopup(popup).addTo(map);
       return [marker];
     });
   }, [listings, coordinates, onListingSelect]);
