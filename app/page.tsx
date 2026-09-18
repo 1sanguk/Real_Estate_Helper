@@ -44,10 +44,10 @@ const officialSources = [
     name: 'LH 청약플러스',
     url: 'https://apply.lh.or.kr/lhapply/apply/wt/wrtanc/selectWrtancList.do?mi=1026',
   },
-  { name: 'SH 인터넷청약', url: 'https://www.i-sh.co.kr/app' },
+  { name: 'SH 모집공고', url: 'https://www.i-sh.co.kr/app/lay2/program/S1T294C295/www/brd/m_241/list.do?multi_itm_seqs=1%2C2%2C4%2C8%2C16%2C32%2C64%2C128%2C256' },
   {
     name: 'HUG 든든전세',
-    url: 'https://www.khug.or.kr/jeonse/web/s07/s070101.jsp',
+    url: 'https://www.khug.or.kr/jeonse/web/s07/s070102.jsp',
   },
 ];
 
@@ -493,9 +493,9 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
               ))}
             </div>
             <div className="mt-4 space-y-2 text-sm">
-              <p><strong className="text-primary">LH 자동 수집 중</strong> · 현재 화면에 실제 진행 중 공고만 표시</p>
-              <p><strong>HUG 연결 준비</strong> · 공식 든든전세 API 승인 및 주소 등록 후 자동 수집</p>
-              <p><strong>SH 공식 출처 확인 중</strong> · 공급계획 자료를 모집공고로 오인해 표시하지 않음</p>
+              <p><strong className="text-primary">LH 자동 수집</strong> · 공고, 공급주택, 신청 일정과 공식 첨부파일을 청약플러스 API에서 확인</p>
+              <p><strong className="text-primary">SH 자동 수집</strong> · 공식 모집공고 RSS와 상세 페이지에서 실제 모집공고 및 첨부 공고문을 확인</p>
+              <p><strong className="text-primary">HUG 자동 수집</strong> · 든든전세 공식 공공데이터와 모집·신청 페이지에서 주택 목록, 접수기간 및 공고문을 확인</p>
             </div>
           </div>
         </section>
