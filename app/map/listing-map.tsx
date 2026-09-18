@@ -43,7 +43,7 @@ async function geocodeAddress(listing: OfficialListing, signal: AbortSignal): Pr
   return coordinates;
 }
 
-export function ListingMap({ listings }: { listings: OfficialListing[] }) {
+export function ListingMap({ listings, focusedRegion, onListingSelect }: { listings: OfficialListing[]; focusedRegion: string; onListingSelect: (listingId: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef<Marker[]>([]);
@@ -55,6 +55,13 @@ export function ListingMap({ listings }: { listings: OfficialListing[] }) {
     mapRef.current.addControl(new maplibregl.NavigationControl(), 'top-right');
     return () => { mapRef.current?.remove(); mapRef.current = null; };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const center = REGION_CENTERS[focusedRegion] ?? KOREA_CENTER;
+    map.flyTo({ center, zoom: focusedRegion ? 9 : 6.2, duration: 900 });
+  }, [focusedRegion]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -88,15 +95,11 @@ export function ListingMap({ listings }: { listings: OfficialListing[] }) {
       markerElement.className = 'grid size-9 place-items-center rounded-full border-2 border-white text-xs font-black text-white shadow-lg';
       markerElement.style.backgroundColor = AGENCY_COLORS[listing.agency];
       markerElement.textContent = listing.agency;
-      const popupElement = document.createElement('div');
-      const agency = document.createElement('strong'); agency.textContent = `${listing.agency} · ${listing.program}`;
-      const title = document.createElement('a'); title.href = `/listings/view?id=${encodeURIComponent(listing.id)}`; title.textContent = listing.title; title.className = 'block mt-1 font-bold';
-      const address = document.createElement('p'); address.textContent = listing.address ?? `${listing.region} 중심 기준 대략 위치`; address.className = 'mt-1 text-xs';
-      popupElement.append(agency, title, address);
-      const marker = new maplibregl.Marker({ element: markerElement }).setLngLat([point.longitude, point.latitude]).setPopup(new maplibregl.Popup({ offset: 22 }).setDOMContent(popupElement)).addTo(map);
+      markerElement.addEventListener('click', () => onListingSelect(listing.id));
+      const marker = new maplibregl.Marker({ element: markerElement }).setLngLat([point.longitude, point.latitude]).addTo(map);
       return [marker];
     });
-  }, [listings, coordinates]);
+  }, [listings, coordinates, onListingSelect]);
 
   return <div className="relative overflow-hidden rounded-2xl border bg-white"><div ref={containerRef} className="h-[62vh] min-h-[480px] w-full" /><div className="absolute bottom-3 left-3 z-10 rounded-lg bg-white/95 px-3 py-2 text-xs shadow"><div className="flex gap-3"><span className="text-blue-600">● LH</span><span className="text-green-600">● SH</span><span className="text-red-600">● HUG</span></div><p className="mt-1 text-muted-foreground">주소가 없는 공고는 지역 중심의 대략 위치로 표시됩니다.</p></div></div>;
 }
