@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
+import { Textarea } from '@/components/ui/textarea';
 import {
   assessListing,
   assessListingWithRules,
@@ -68,6 +69,8 @@ function ListingDetailContent() {
   const [actionMessage, setActionMessage] = useState('');
   const [savePending, setSavePending] = useState(false);
   const [docPendingId, setDocPendingId] = useState<number | null>(null);
+  const [personalNote, setPersonalNote] = useState('');
+  const [notePending, setNotePending] = useState(false);
   const {
     savedListingIds,
     toggleSavedListing,
@@ -121,13 +124,15 @@ function ListingDetailContent() {
       client.from('listing_required_documents').select('id,document_name,requirement_type,issuer,evidence_text').eq('source_listing_id', id).order('requirement_type').order('id'),
       client.from('listing_reviews').select('review_status').eq('source_listing_id', id).maybeSingle(),
       client.from('listing_change_events').select('id,summary,detected_at').eq('source_listing_id', id).order('detected_at', { ascending: false }).limit(10),
-    ]).then(([detailResult, attachmentResult, ruleResult, documentResult, reviewResult, changeResult]) => {
+      client.from('saved_listing_notes').select('note').eq('user_id', user.id).eq('source_listing_id', id).maybeSingle(),
+    ]).then(([detailResult, attachmentResult, ruleResult, documentResult, reviewResult, changeResult, noteResult]) => {
       if (!detailResult.error && detailResult.data) setDetail(detailResult.data);
       if (!attachmentResult.error && attachmentResult.data) setAttachments(attachmentResult.data);
       if (!ruleResult.error && ruleResult.data) setRules(ruleResult.data);
       if (!documentResult.error && documentResult.data) setRequiredDocuments(documentResult.data);
       if (!reviewResult.error && reviewResult.data) setReviewStatus(reviewResult.data.review_status);
       if (!changeResult.error && changeResult.data) setChangeEvents(changeResult.data);
+      if (!noteResult.error && noteResult.data) setPersonalNote(noteResult.data.note);
     });
   }, [user, id]);
 
@@ -159,6 +164,21 @@ function ListingDetailContent() {
     } finally {
       setDocPendingId(null);
     }
+  }
+
+  async function savePersonalNote() {
+    if (!user || !listing || notePending || !savedListingIds.includes(listing.id)) return;
+    const client = getSupabaseClient();
+    if (!client) return;
+    setNotePending(true);
+    const { error } = await client.from('saved_listing_notes').upsert({
+      user_id: user.id,
+      source_listing_id: listing.id,
+      note: personalNote.trim(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,source_listing_id' });
+    setActionMessage(error ? '개인 메모를 저장하지 못했습니다.' : '개인 메모를 저장했습니다.');
+    setNotePending(false);
   }
 
   if (loading || !user) return <LoadingShell />;
@@ -282,6 +302,13 @@ function ListingDetailContent() {
             )}
 
             {profile && <EligibilitySimulator profile={profile} listing={listing} rules={rules} />}
+
+            <section className="rounded-2xl border bg-white p-6">
+              <h2 className="font-extrabold">개인 메모</h2>
+              <p className="mt-1 text-sm text-muted-foreground">서류 준비, 문의 내용 등 이 공고에 필요한 메모를 2,000자까지 저장할 수 있습니다.</p>
+              <Textarea className="mt-4 min-h-28" maxLength={2000} value={personalNote} disabled={!savedListingIds.includes(listing.id)} onChange={(event) => setPersonalNote(event.target.value)} placeholder={savedListingIds.includes(listing.id) ? '이 공고에 대한 개인 메모를 입력하세요.' : '관심 공고로 저장하면 개인 메모를 작성할 수 있습니다.'} />
+              <div className="mt-3 flex items-center justify-between"><span className="text-xs text-muted-foreground">{personalNote.length}/2000</span><Button type="button" disabled={notePending || !savedListingIds.includes(listing.id)} onClick={() => void savePersonalNote()}>{notePending ? '저장 중…' : '메모 저장'}</Button></div>
+            </section>
 
             {changeEvents.length > 0 && (
               <section className="rounded-2xl border bg-white p-6">

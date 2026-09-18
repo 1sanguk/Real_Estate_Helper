@@ -10,8 +10,11 @@ import {
   FileCheck2,
   Heart,
   Home,
+  GitCompareArrows,
   LogOut,
   MapPin,
+  MapPinned,
+  Settings2,
   ShieldCheck,
   UserRound,
   WalletCards,
@@ -75,6 +78,8 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
   const [profileError, setProfileError] = useState('');
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [latestChanges, setLatestChanges] = useState<Record<string, { summary: string; detectedAt: string }>>({});
+  const [comparisonIds, setComparisonIds] = useState<string[]>([]);
   const { savedListingIds, toggleSavedListing } = useUserPreferences(user?.id);
   const listingsHref = savedOnly ? '/#listings' : '#listings';
 
@@ -141,6 +146,13 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
     });
     void client.from('listing_sync_runs').select('completed_at').eq('status', 'succeeded').order('completed_at', { ascending: false }).limit(1).maybeSingle().then(({ data }) => setLastSyncedAt(data?.completed_at ?? null));
     void client.from('user_notifications').select('id', { count: 'exact', head: true }).eq('user_id', user.id).is('read_at', null).then(({ count }) => setUnreadNotificationCount(count ?? 0));
+    const changeHighlightStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    void client.from('listing_change_events').select('source_listing_id,summary,detected_at').gte('detected_at', changeHighlightStart).order('detected_at', { ascending: false }).then(({ data, error }) => {
+      if (error || !data) return;
+      const changes: Record<string, { summary: string; detectedAt: string }> = {};
+      for (const event of data) if (!changes[event.source_listing_id]) changes[event.source_listing_id] = { summary: event.summary, detectedAt: event.detected_at };
+      setLatestChanges(changes);
+    });
   }, [user, router]);
 
   const age = calculateAge(profile?.birth_date ?? null);
@@ -178,6 +190,10 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
   const displayedPage = Math.min(currentPage, totalPages);
   const pageStart = (displayedPage - 1) * pageSize;
   const visibleListings = filteredListings.slice(pageStart, pageStart + pageSize);
+  const comparedListings = comparisonIds.flatMap((id) => {
+    const item = assessed.find(({ listing }) => listing.id === id);
+    return item ? [item] : [];
+  });
   async function saveListing(id: string) {
     if (pendingId) return;
     setPendingId(id);
@@ -194,6 +210,28 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
     setViewedListingIds((current) =>
       current.includes(id) ? current : [...current, id],
     );
+  }
+  function toggleComparison(id: string) {
+    setComparisonIds((current) => {
+      if (current.includes(id)) return current.filter((item) => item !== id);
+      if (current.length >= 3) {
+        setActionMessage('공고는 최대 3개까지 비교할 수 있습니다.');
+        return current;
+      }
+      setActionMessage('');
+      return [...current, id];
+    });
+  }
+  function openListingCard(event: React.MouseEvent<HTMLElement>, id: string) {
+    if (event.target instanceof Element && event.target.closest('a, button, input, select, textarea, label')) return;
+    viewListing(id);
+    router.push(`/listings/view?id=${encodeURIComponent(id)}`);
+  }
+  function openListingCardWithKeyboard(event: React.KeyboardEvent<HTMLElement>, id: string) {
+    if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+    event.preventDefault();
+    viewListing(id);
+    router.push(`/listings/view?id=${encodeURIComponent(id)}`);
   }
 
   if (loading || !user || (!profile && !profileError))
@@ -218,8 +256,14 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
             <Link href={listingsHref}>실제 공고</Link>
             <Link href="/saved">관심 공고</Link>
             <Link href="/calendar">지원 일정</Link>
-            <Link href="/profile/setup">내 조건 수정</Link>
-            <Link href="/settings">알림·개인정보{unreadNotificationCount > 0 ? ` ${unreadNotificationCount}` : ''}</Link>
+            <Link href="/map">지도 보기</Link>
+            <details className="relative">
+              <summary className="flex cursor-pointer list-none items-center gap-1"><Settings2 className="size-4" />개인설정{unreadNotificationCount > 0 ? ` ${unreadNotificationCount}` : ''}</summary>
+              <div className="absolute right-0 top-8 z-30 min-w-40 space-y-1 rounded-xl border bg-white p-2 shadow-lg">
+                <Link href="/profile/setup" className="block rounded-lg px-3 py-2 hover:bg-secondary">내 조건 수정</Link>
+                <Link href="/settings" className="block rounded-lg px-3 py-2 hover:bg-secondary">알림·개인정보</Link>
+              </div>
+            </details>
             <Button
               type="button"
               variant="outline"
@@ -351,13 +395,29 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
             <label className="flex flex-col gap-1 text-sm">표시 개수<select className="h-10 rounded border px-3" value={pageSize} onChange={event => { setPageSize(Number(event.target.value) as 10 | 20 | 50); setCurrentPage(1); }}><option value={10}>10개</option><option value={20}>20개</option><option value={50}>50개</option></select></label>
           </div>
           {actionMessage && <p role="status" className="mb-4 rounded border p-3">{actionMessage}</p>}
+          {comparedListings.length > 0 && (
+            <section className="mb-5 overflow-x-auto rounded-xl border bg-white p-4">
+              <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><GitCompareArrows className="size-5 text-primary" /><h3 className="font-extrabold">공고 비교 ({comparedListings.length}/3)</h3></div><Button type="button" variant="ghost" size="sm" onClick={() => setComparisonIds([])}>비교 초기화</Button></div>
+              <table className="w-full min-w-[680px] text-left text-sm"><thead><tr className="border-b"><th className="p-2">항목</th>{comparedListings.map(({ listing }) => <th key={listing.id} className="max-w-64 p-2">{listing.title}</th>)}</tr></thead><tbody>{[
+                ['기관·유형', (item: typeof comparedListings[number]) => `${item.listing.agency} · ${item.listing.program}`],
+                ['지역', (item: typeof comparedListings[number]) => `${item.listing.region}${item.listing.address ? ` · ${item.listing.address}` : ''}`],
+                ['면적·공급', (item: typeof comparedListings[number]) => [item.listing.area, item.listing.units].filter(Boolean).join(' · ') || '확인 필요'],
+                ['접수기간', (item: typeof comparedListings[number]) => item.listing.applicationPeriod ?? '확인 필요'],
+                ['사전 진단', (item: typeof comparedListings[number]) => item.assessment.status],
+              ].map(([label, value]) => <tr key={String(label)} className="border-b last:border-0"><th className="whitespace-nowrap p-2 text-muted-foreground">{String(label)}</th>{comparedListings.map((item) => <td key={item.listing.id} className="p-2">{(value as (item: typeof comparedListings[number]) => string)(item)}</td>)}</tr>)}</tbody></table>
+            </section>
+          )}
           {listingError && <p role="alert" className="mb-4 text-destructive">{listingError} <button onClick={() => window.location.reload()}>다시 시도</button></p>}
           {listingsLoading ? <p className="p-6">공고를 불러오고 있습니다…</p> : !listingError && filteredListings.length === 0 && <p className="rounded-xl border p-6">{listings.length === 0 ? '아직 수집된 공고가 없습니다. 공식 공고가 수집되면 여기에 표시됩니다.' : savedOnly ? '조건에 맞는 관심 공고가 없습니다. 홈에서 공고를 저장하거나 검색 조건을 변경해 주세요.' : '검색 조건에 맞는 공고가 없습니다. 검색 조건을 변경해 주세요.'}</p>}
           <div className="space-y-3">
             {visibleListings.map(({ listing, assessment, checks }) => (
               <article
                 key={listing.id}
-                className="rounded-2xl border bg-white p-6"
+                onClick={(event) => openListingCard(event, listing.id)}
+                onKeyDown={(event) => openListingCardWithKeyboard(event, listing.id)}
+                role="link"
+                tabIndex={0}
+                className="cursor-pointer rounded-2xl border bg-white p-6 transition-colors hover:border-primary/40 hover:bg-primary/[0.02]"
               >
                 <div className="grid gap-5 lg:grid-cols-[1fr_260px] lg:items-center">
                   <div>
@@ -385,6 +445,11 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                       <p className="mt-2 text-sm font-bold">
                         접수기간 {listing.applicationPeriod}
                       </p>
+                    )}
+                    {latestChanges[listing.id] && (
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                        <strong>최근 변경</strong> · {latestChanges[listing.id].summary}
+                      </div>
                     )}
                   </div>
                   <div className="rounded-xl bg-secondary/70 p-4">
@@ -435,6 +500,8 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
                       >
                         상세·서류 보기
                       </Link>
+                      <Button type="button" variant={comparisonIds.includes(listing.id) ? 'default' : 'outline'} size="sm" className="min-h-9 h-auto w-full" onClick={() => toggleComparison(listing.id)}><GitCompareArrows className="size-4" />{comparisonIds.includes(listing.id) ? '비교 선택됨' : '비교'}</Button>
+                      {listing.address ? <a href={`https://map.naver.com/p/search/${encodeURIComponent(listing.address)}`} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center justify-center gap-1 rounded-lg border px-3 py-2 text-xs font-bold"><MapPinned className="size-4" />지도</a> : <Link href="/map" className="inline-flex min-h-9 items-center justify-center gap-1 rounded-lg border px-3 py-2 text-xs font-bold"><MapPinned className="size-4" />지역 보기</Link>}
                       <a
                         href={listing.sourceUrl}
                         target="_blank"
