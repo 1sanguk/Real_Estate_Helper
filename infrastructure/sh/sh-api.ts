@@ -4,7 +4,7 @@ export const DEFAULT_SH_RSS_URL =
   'https://www.i-sh.co.kr/main/lay2/program/S1T294C295/www/rss/rssNoticeWrite.do';
 
 const SH_ORIGIN = 'https://www.i-sh.co.kr';
-const USER_AGENT = 'RealEstateHelper/1.0 (+https://github.com/parksteve/Real_Estate_Helper)';
+const USER_AGENT = 'PublicHousingCollector/1.0 (+https://github.com/parksteve/Real_Estate_Helper)';
 const EXCLUDED_TITLE_WORDS = [
   '접수결과', '접수 결과', '접수마감', '접수 마감', '당첨자', '계약결과', '계약 결과',
   '입주 안내', '서류심사대상자', '공급대상자 발표', '예비대상자 발표', '채용', '입찰',

@@ -235,7 +235,7 @@ export default function ProfileSetupPage() {
             <span className="grid size-8 place-items-center rounded-lg bg-primary text-white">
               <Home className="size-4" />
             </span>
-            <strong>내집레이더</strong>
+            <strong>공공주택 수집기</strong>
           </div>
         </div>
         <section className="overflow-hidden rounded-[30px] border bg-white shadow-[0_24px_70px_rgba(157,76,47,.13)]">

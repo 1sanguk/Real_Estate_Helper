@@ -3,7 +3,7 @@ import './globals.css';
 import { AuthProvider } from '@/features/auth/auth-context';
 
 export const metadata: Metadata = {
-  title: '내집레이더 | LH·SH 공공주택 맞춤 탐색',
+  title: '공공주택 수집기 | LH·SH·HUG 공공주택 맞춤 탐색',
   description: '내 조건에 맞는 LH·SH 공공주택 공고와 준비 서류를 한눈에 확인하세요.',
 };
 

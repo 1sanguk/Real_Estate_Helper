@@ -212,7 +212,7 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
             <span className="grid size-9 place-items-center rounded-xl bg-primary text-white">
               <Home className="size-5" />
             </span>
-            <strong className="text-lg">내집레이더</strong>
+            <strong className="text-lg">공공주택 수집기</strong>
           </Link>
           <nav className="flex items-center gap-7 text-sm font-bold">
             <Link href={listingsHref}>실제 공고</Link>

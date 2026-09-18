@@ -78,7 +78,7 @@ export class HugApiClient {
   private async fetchCurrentNoticeDocument(): Promise<string | null> {
     try {
       const response = await fetch(HUG_APPLICATION_URL, {
-        headers: { accept: 'text/html', 'user-agent': 'RealEstateHelper/1.0' },
+        headers: { accept: 'text/html', 'user-agent': 'PublicHousingCollector/1.0' },
       });
       if (!response.ok) return null;
       const html = new TextDecoder('euc-kr').decode(await response.arrayBuffer());
