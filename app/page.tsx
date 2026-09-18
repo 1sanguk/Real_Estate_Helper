@@ -59,9 +59,12 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
   const [profile, setProfile] = useState<DashboardProfile | null>(null);
   const [listings, setListings] = useState<OfficialListing[]>([]);
   const [agency, setAgency] = useState('');
+  const [searchTarget, setSearchTarget] = useState<'title' | 'content' | 'all'>('all');
   const [query, setQuery] = useState('');
   const [region, setRegion] = useState('');
   const [possibleOnly, setPossibleOnly] = useState(true);
+  const [pageSize, setPageSize] = useState<10 | 20 | 50>(10);
+  const [currentPage, setCurrentPage] = useState(1);
   const [viewedListingIds, setViewedListingIds] = useState<string[]>([]);
   const searchStateReady = useRef(false);
   const [listingError, setListingError] = useState('');
@@ -83,9 +86,12 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
     searchStateReady.current = false;
     const storedState = loadListingSearchState(user.id, savedOnly);
     setAgency(storedState.agency);
+    setSearchTarget(storedState.searchTarget);
     setQuery(storedState.query);
     setRegion(storedState.region);
     setPossibleOnly(storedState.possibleOnly);
+    setPageSize(storedState.pageSize);
+    setCurrentPage(1);
     setViewedListingIds(loadViewedListingIds(user.id));
     queueMicrotask(() => {
       searchStateReady.current = true;
@@ -93,8 +99,8 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
   }, [user, savedOnly]);
   useEffect(() => {
     if (!user || !searchStateReady.current) return;
-    saveListingSearchState(user.id, savedOnly, { agency, query, region, possibleOnly });
-  }, [user, savedOnly, agency, query, region, possibleOnly]);
+    saveListingSearchState(user.id, savedOnly, { agency, searchTarget, query, region, possibleOnly, pageSize });
+  }, [user, savedOnly, agency, searchTarget, query, region, possibleOnly, pageSize]);
   useEffect(() => {
     if (!user) return;
     const client = getSupabaseClient();
@@ -157,13 +163,21 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
   const possibleCount = assessed.filter(
     (item) => item.assessment.status === '가능성 있음',
   ).length;
-  const visible = assessed.filter(({listing, assessment}) =>
-    (!savedOnly || savedListingIds.includes(listing.id)) &&
-    (!agency || listing.agency === agency) &&
-    (!region || listing.region === region) &&
-    (!possibleOnly || assessment.status === '가능성 있음') &&
-    `${listing.title} ${listing.region} ${listing.address ?? ''} ${listing.program}`.toLowerCase().includes(query.trim().toLowerCase())
-  );
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredListings = assessed.filter(({listing, assessment}) => {
+    const titleText = listing.title.toLowerCase();
+    const contentText = `${listing.agency} ${listing.program} ${listing.region} ${listing.address ?? ''} ${listing.area ?? ''} ${listing.units ?? ''} ${listing.status} ${listing.applicationPeriod ?? ''}`.toLowerCase();
+    const searchText = searchTarget === 'title' ? titleText : searchTarget === 'content' ? contentText : `${titleText} ${contentText}`;
+    return (!savedOnly || savedListingIds.includes(listing.id)) &&
+      (!agency || listing.agency === agency) &&
+      (!region || listing.region === region) &&
+      (!possibleOnly || assessment.status === '가능성 있음') &&
+      (!normalizedQuery || searchText.includes(normalizedQuery));
+  });
+  const totalPages = Math.max(1, Math.ceil(filteredListings.length / pageSize));
+  const displayedPage = Math.min(currentPage, totalPages);
+  const pageStart = (displayedPage - 1) * pageSize;
+  const visibleListings = filteredListings.slice(pageStart, pageStart + pageSize);
   async function saveListing(id: string) {
     if (pendingId) return;
     setPendingId(id);
@@ -324,21 +338,23 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
               </p>
             </div>
             <strong className="text-sm text-primary">
-              검색 결과 {visible.length}건
+              검색 결과 {filteredListings.length}건
             </strong>
           </div>
-          <div className="mb-5 grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-[140px_180px_minmax(240px,1fr)_auto_auto] md:items-end">
-            <label className="flex flex-col gap-1 text-sm">기관<select className="h-10 rounded border px-3" value={agency} onChange={event => setAgency(event.target.value)}><option value="">전체 기관</option><option value="SH">SH</option><option value="LH">LH</option><option value="HUG">HUG</option></select></label>
-            <label className="flex flex-col gap-1 text-sm">지역<select className="h-10 rounded border px-3" value={region} onChange={event => setRegion(event.target.value)}><option value="">전체 지역</option>{[...new Set(listings.map(item => item.region))].sort().map(value => <option key={value}>{value}</option>)}</select></label>
-            <label className="flex flex-col gap-1 text-sm">공고 검색<input className="h-10 rounded border px-3" placeholder="공고명, 지역, 주소, 사업 유형" value={query} onChange={event => setQuery(event.target.value)} /></label>
-            <label className="flex h-10 items-center gap-2 whitespace-nowrap rounded-lg border px-3 text-sm"><input type="checkbox" checked={possibleOnly} onChange={event => setPossibleOnly(event.target.checked)} />내가 지원할 수 있는 공고만</label>
-            <Button className="h-10 whitespace-nowrap px-4" variant="outline" onClick={() => { setAgency(''); setRegion(''); setQuery(''); setPossibleOnly(true); }}>초기화</Button>
+          <div className="mb-5 grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-[120px_150px_120px_minmax(210px,1fr)_auto_auto_100px] md:items-end">
+            <label className="flex flex-col gap-1 text-sm">기관<select className="h-10 rounded border px-3" value={agency} onChange={event => { setAgency(event.target.value); setCurrentPage(1); }}><option value="">전체 기관</option><option value="SH">SH</option><option value="LH">LH</option><option value="HUG">HUG</option></select></label>
+            <label className="flex flex-col gap-1 text-sm">지역<select className="h-10 rounded border px-3" value={region} onChange={event => { setRegion(event.target.value); setCurrentPage(1); }}><option value="">전체 지역</option>{[...new Set(listings.map(item => item.region))].sort().map(value => <option key={value}>{value}</option>)}</select></label>
+            <label className="flex flex-col gap-1 text-sm">검색 범위<select className="h-10 rounded border px-3" value={searchTarget} onChange={event => { setSearchTarget(event.target.value as 'title' | 'content' | 'all'); setCurrentPage(1); }}><option value="title">제목</option><option value="content">내용</option><option value="all">제목+내용</option></select></label>
+            <label className="flex flex-col gap-1 text-sm">공고 검색<input className="h-10 rounded border px-3" placeholder="검색어를 입력하세요" value={query} onChange={event => { setQuery(event.target.value); setCurrentPage(1); }} /></label>
+            <label className="flex h-10 items-center gap-2 whitespace-nowrap rounded-lg border px-3 text-sm"><input type="checkbox" checked={possibleOnly} onChange={event => { setPossibleOnly(event.target.checked); setCurrentPage(1); }} />내가 지원할 수 있는 공고만</label>
+            <Button className="h-10 whitespace-nowrap px-4" variant="outline" onClick={() => { setAgency(''); setRegion(''); setSearchTarget('all'); setQuery(''); setPossibleOnly(true); setCurrentPage(1); }}>초기화</Button>
+            <label className="flex flex-col gap-1 text-sm">표시 개수<select className="h-10 rounded border px-3" value={pageSize} onChange={event => { setPageSize(Number(event.target.value) as 10 | 20 | 50); setCurrentPage(1); }}><option value={10}>10개</option><option value={20}>20개</option><option value={50}>50개</option></select></label>
           </div>
           {actionMessage && <p role="status" className="mb-4 rounded border p-3">{actionMessage}</p>}
           {listingError && <p role="alert" className="mb-4 text-destructive">{listingError} <button onClick={() => window.location.reload()}>다시 시도</button></p>}
-          {listingsLoading ? <p className="p-6">공고를 불러오고 있습니다…</p> : !listingError && visible.length === 0 && <p className="rounded-xl border p-6">{listings.length === 0 ? '아직 수집된 공고가 없습니다. 공식 공고가 수집되면 여기에 표시됩니다.' : savedOnly ? '조건에 맞는 관심 공고가 없습니다. 홈에서 공고를 저장하거나 검색 조건을 변경해 주세요.' : '검색 조건에 맞는 공고가 없습니다. 검색 조건을 변경해 주세요.'}</p>}
+          {listingsLoading ? <p className="p-6">공고를 불러오고 있습니다…</p> : !listingError && filteredListings.length === 0 && <p className="rounded-xl border p-6">{listings.length === 0 ? '아직 수집된 공고가 없습니다. 공식 공고가 수집되면 여기에 표시됩니다.' : savedOnly ? '조건에 맞는 관심 공고가 없습니다. 홈에서 공고를 저장하거나 검색 조건을 변경해 주세요.' : '검색 조건에 맞는 공고가 없습니다. 검색 조건을 변경해 주세요.'}</p>}
           <div className="space-y-3">
-            {visible.map(({ listing, assessment, checks }) => (
+            {visibleListings.map(({ listing, assessment, checks }) => (
               <article
                 key={listing.id}
                 className="rounded-2xl border bg-white p-6"
@@ -434,6 +450,14 @@ export function Dashboard({ savedOnly = false }: { savedOnly?: boolean }) {
               </article>
             ))}
           </div>
+          {filteredListings.length > 0 && (
+            <nav className="mt-5 flex flex-wrap items-center justify-center gap-3" aria-label="공고 목록 페이지 이동">
+              <Button type="button" variant="outline" disabled={displayedPage === 1} onClick={() => setCurrentPage(displayedPage - 1)}>이전</Button>
+              <span className="min-w-28 text-center text-sm font-bold">{displayedPage} / {totalPages} 페이지</span>
+              <Button type="button" variant="outline" disabled={displayedPage === totalPages} onClick={() => setCurrentPage(displayedPage + 1)}>다음</Button>
+              <span className="text-sm text-muted-foreground">{pageStart + 1}–{Math.min(pageStart + pageSize, filteredListings.length)} / {filteredListings.length}건</span>
+            </nav>
+          )}
         </section>
 
         <section className="grid gap-5 lg:grid-cols-2">

@@ -80,7 +80,7 @@ async function main() {
     const hugResult = await hugClient.fetchListings().catch((error) => {
       const reason = error instanceof Error ? error.message : String(error);
       console.warn(`HUG 공고 수집 실패로 LH 공고만 계속 처리합니다: ${reason}`);
-      return { listings: [], rowsById: new Map<string, LhApiRow[]>() };
+      return { listings: [], details: [], rowsById: new Map<string, LhApiRow[]>() };
     });
     const shClient = new ShApiClient(
       process.env.SH_ANNOUNCEMENT_RSS_URL?.trim() || DEFAULT_SH_RSS_URL,
@@ -163,7 +163,7 @@ async function main() {
         if (notificationError) throw notificationError;
       }
     }
-    if (details.length || shResult.details.length) {
+    if (details.length || shResult.details.length || hugResult.details.length) {
       const syncedAt = new Date().toISOString();
       const detailRows = details.map((detail) => ({
         source_listing_id: detail.panId,
@@ -181,6 +181,13 @@ async function main() {
         contract_places: [],
         raw_data: detail.rawData,
         synced_at: syncedAt,
+      }))).concat(hugResult.details.map((detail) => ({
+        source_listing_id: detail.sourceListingId,
+        application_schedules: [{ applicationPeriod: detail.applicationPeriod }],
+        complexes: [],
+        contract_places: [],
+        raw_data: detail.rawData,
+        synced_at: syncedAt,
       })));
       const { error: detailError } = await supabase.from('listing_details')
         .upsert(detailRows, { onConflict: 'source_listing_id' });
@@ -192,6 +199,12 @@ async function main() {
         source_url: sourceText(item.AHFL_URL),
         synced_at: syncedAt,
       }))).concat(shResult.details.flatMap((detail) => detail.attachments.map((item) => ({
+        source_listing_id: detail.sourceListingId,
+        name: item.name,
+        document_type: item.documentType,
+        source_url: item.sourceUrl,
+        synced_at: syncedAt,
+      })))).concat(hugResult.details.flatMap((detail) => detail.attachments.map((item) => ({
         source_listing_id: detail.sourceListingId,
         name: item.name,
         document_type: item.documentType,

@@ -2,16 +2,20 @@
 
 export type ListingSearchState = {
   agency: string;
+  searchTarget: 'title' | 'content' | 'all';
   query: string;
   region: string;
   possibleOnly: boolean;
+  pageSize: 10 | 20 | 50;
 };
 
 const DEFAULT_SEARCH_STATE: ListingSearchState = {
   agency: '',
+  searchTarget: 'all',
   query: '',
   region: '',
   possibleOnly: true,
+  pageSize: 10,
 };
 
 function searchStateKey(userId: string, savedOnly: boolean) {
@@ -29,10 +33,16 @@ export function loadListingSearchState(userId: string, savedOnly: boolean) {
     const parsed = JSON.parse(stored) as Partial<ListingSearchState>;
     return {
       agency: typeof parsed.agency === 'string' ? parsed.agency : '',
+      searchTarget: ['title', 'content', 'all'].includes(parsed.searchTarget ?? '')
+        ? parsed.searchTarget as ListingSearchState['searchTarget']
+        : 'all',
       query: typeof parsed.query === 'string' ? parsed.query : '',
       region: typeof parsed.region === 'string' ? parsed.region : '',
       possibleOnly:
         typeof parsed.possibleOnly === 'boolean' ? parsed.possibleOnly : true,
+      pageSize: [10, 20, 50].includes(parsed.pageSize ?? 0)
+        ? parsed.pageSize as ListingSearchState['pageSize']
+        : 10,
     };
   } catch {
     return DEFAULT_SEARCH_STATE;

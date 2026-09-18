@@ -2,6 +2,15 @@ import type { LhApiRow, OfficialListing } from '../../domain/dashboard.ts';
 
 export const DEFAULT_HUG_LISTINGS_URL =
   'https://infuser.odcloud.kr/oas/docs?namespace=15139525/v1';
+export const HUG_APPLICATION_URL =
+  'https://www.khug.or.kr/jeonse/web/s07/s070102.jsp';
+
+export type HugNoticeDetail = {
+  sourceListingId: string;
+  applicationPeriod: string;
+  attachments: Array<{ name: string; documentType: string; sourceUrl: string }>;
+  rawData: LhApiRow[];
+};
 
 type HugApiResponse = {
   data?: LhApiRow[];
@@ -17,7 +26,7 @@ type SwaggerDocument = {
 
 function value(row: LhApiRow, key: string) {
   const item = row[key];
-  return item == null ? '' : String(item).trim();
+  return typeof item === 'string' || typeof item === 'number' ? String(item).trim() : '';
 }
 
 function compactDate(input: string) {
@@ -66,7 +75,21 @@ export class HugApiClient {
     return `https://${document.host}${document.basePath ?? ''}${latestPath}`;
   }
 
-  async fetchListings(): Promise<{ listings: OfficialListing[]; rowsById: Map<string, LhApiRow[]> }> {
+  private async fetchCurrentNoticeDocument(): Promise<string | null> {
+    try {
+      const response = await fetch(HUG_APPLICATION_URL, {
+        headers: { accept: 'text/html', 'user-agent': 'RealEstateHelper/1.0' },
+      });
+      if (!response.ok) return null;
+      const html = new TextDecoder('euc-kr').decode(await response.arrayBuffer());
+      const href = html.match(/href=["'](https:\/\/www\.khug\.or\.kr\/hug\/homepage_file_upload\/jeonse_notice_[^"']+\.pdf)["']/i)?.[1];
+      return href ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchListings(): Promise<{ listings: OfficialListing[]; details: HugNoticeDetail[]; rowsById: Map<string, LhApiRow[]> }> {
     const rows: LhApiRow[] = [];
     const perPage = 1000;
     const apiUrl = await this.resolveApiUrl();
@@ -113,9 +136,19 @@ export class HugApiClient {
         publishedAt: displayDate(announced),
         applicationPeriod: `${displayDate(start)}~${displayDate(end)}`,
         status: currentStatus(end),
-        sourceUrl: 'https://www.khug.or.kr/jeonse/web/s07/s070101.jsp',
+        sourceUrl: HUG_APPLICATION_URL,
       };
     });
-    return { listings, rowsById: groups };
+    const currentDocumentUrl = await this.fetchCurrentNoticeDocument();
+    const latestPublishedAt = listings.map((listing) => listing.publishedAt).sort().at(-1);
+    const details = listings.map((listing) => ({
+      sourceListingId: listing.id,
+      applicationPeriod: listing.applicationPeriod!,
+      attachments: currentDocumentUrl && listing.publishedAt === latestPublishedAt
+        ? [{ name: 'HUG 든든전세주택 입주자 모집공고문.pdf', documentType: '모집공고문', sourceUrl: currentDocumentUrl }]
+        : [],
+      rawData: groups.get(listing.id) ?? [],
+    }));
+    return { listings, details, rowsById: groups };
   }
 }
